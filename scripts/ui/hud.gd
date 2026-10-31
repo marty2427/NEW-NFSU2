@@ -3,7 +3,7 @@ extends CanvasLayer
 ## Herni ukazatele: otackomer/tachometr, drift body, FPS, zpravy.
 ## Poskozeni se ukazuje primo na aute (kour, ohen) a cervenym okrajem obrazovky.
 
-var car: Car:
+var car: Node:  # Car nebo GevpCar
 	set(value):
 		car = value
 		if _tacho:
@@ -56,7 +56,7 @@ func _ready() -> void:
 	# --- Vpravo dole: otackomer ---
 	_tacho = Tachometer.new()
 	root.add_child(_tacho)
-	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -400, -440, -20, -10)
+	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -500, -460, -10, -10)
 	_tacho.car = car
 
 	# --- Stred: zpravy ---
@@ -86,7 +86,8 @@ func _ready() -> void:
 		"W/S nebo šipky ... plyn / brzda / couvání      A/D ... zatáčení",
 		"MEZERNÍK ... ruční brzda      SHIFT ... nitro      C ... kamera      Q ... pohled vzad",
 		"R ... postavit auto      1 / 2 / 3 ... změna auta      F6 ... znovu načíst auta.cfg",
-		"F5 ... kvalita grafiky      F3 ... FPS      F11 ... celá obrazovka      K ... test poškození",
+		"F5 ... kvalita grafiky      F7 ... varianta řízení      F8 ... den / noc      K ... test poškození",
+		"F3 ... FPS      F11 ... celá obrazovka",
 		"F1 ... skrýt nápovědu      ESC ... konec",
 	])
 
@@ -139,7 +140,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	var info := "Grafika: %s" % Graphics.quality_name()
+	var info := "Řízení: %s (F7)   ·   Grafika: %s (F5)" % [Hra.profile_name(), Graphics.quality_name()]
 	if _show_fps:
 		info = "FPS %d   ·   %s" % [Engine.get_frames_per_second(), info]
 	_info_label.text = info

@@ -44,10 +44,9 @@ var _phase_log := 0.0
 
 
 ## Test rizeni na volne plose: zatacky v ruznych rychlostech, slalom, drift.
-func _handling_test(t: float, car: Car) -> void:
+func _handling_test(t: float, car) -> void:
 	if t > 0.2 and _once("hset"):
-		car.setup(_handling_car)
-		car.teleport(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 0.6, 1500)))
+		arena.spawn_car(_handling_car, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 0.6, 1500)))
 	# Faze: [od, do, plyn, volant(-1 vlevo..1 vpravo), rucni, cil km/h pro rozjezd]
 	var phases := [
 		[1.0, 6.0, "rozjezd 60", 0.0, false, 60.0],
@@ -88,20 +87,19 @@ func _handling_test(t: float, car: Car) -> void:
 		print("[DBG] t=%.2f mode=%s ang=%.0f fwd=%.1f yaw=%.2f in=%.2f hb=%s grounded=%d up=%.2f pos=%s" % [t, car._drift_mode, car.drift_angle, car.get_forward_speed(), car.angular_velocity.y, car._steer_input, car.in_handbrake, car.grounded_wheels, car.global_basis.y.y, car.global_position])
 	if t >= _phase_log:
 		_phase_log = t + 0.5
-		var w := car.angular_velocity.y
-		var v := car.linear_velocity.length()
-		var r := v / absf(w) if absf(w) > 0.01 else 9999.0
+		var w: float = car.angular_velocity.y
+		var v: float = car.linear_velocity.length()
+		var r: float = v / absf(w) if absf(w) > 0.01 else 9999.0
 		print("[HANDLING] %s %-24s t=%.1f km/h=%3.0f yaw=%5.2f R=%6.1f m drift=%s %2.0f° steer=%.2f" % [
 			_handling_car, cur[2], t, car.speed_kmh, w, r, car.drifting, car.drift_angle, rad_to_deg(car.steer_angle)])
 
 
-func _speed_test(t: float, car: Car) -> void:
+func _speed_test(t: float, car) -> void:
 	# Rovinka mimo mesto: plny plyn 45 s, vypis casu na 100/200 km/h a max. rychlosti
 	if t > 0.2 and _once("speed_setup"):
-		car.setup(_speed_car)
-		car.teleport(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(1200, 0.6, 900)))
+		arena.spawn_car(_speed_car, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(1200, 0.6, 900)))
 	_press("plyn", t > 1.5)
-	var drive_t := t - 1.5
+	var drive_t: float = t - 1.5
 	for kmh in [100, 200]:
 		if car.speed_kmh >= kmh and not _marks.has(kmh) and drive_t > 0.0:
 			_marks[kmh] = drive_t
@@ -116,7 +114,7 @@ func _speed_test(t: float, car: Car) -> void:
 
 func _physics_process(delta: float) -> void:
 	_time += delta
-	var car: Car = arena.car
+	var car = arena.car
 	var t := _time
 	if _speed_car != "":
 		_speed_test(t, car)

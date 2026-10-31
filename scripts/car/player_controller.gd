@@ -3,7 +3,7 @@ extends Node
 ## Predava vstupy z klavesnice / gamepadu autu (rodic tohoto uzlu).
 ## Soupere v dalsich fazich ovlada misto toho AI.
 
-@onready var car: Car = get_parent()
+@onready var car: Node = get_parent()  # Car nebo GevpCar
 
 
 func _physics_process(_delta: float) -> void:

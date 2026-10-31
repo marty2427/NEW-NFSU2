@@ -23,6 +23,9 @@ var max_natoceni_kol := 38.0
 var rychlost_volantu := 5.0
 var pomoc_zataceni := 1.15
 var stabilita := 1.0
+var rychlost_otaceni := 1.0
+var natoceni_kol_vizual := 1.0
+var drift_vstup := 0.25
 var mokra_silnice := 0.95
 var prilnavost_predni := 1.55
 var prilnavost_zadni := 1.65
@@ -46,7 +49,8 @@ var odolnost := 1.0
 var prah_poskozeni := 7.0
 
 
-static func load_car(car_id: String) -> CarTuning:
+## Nacte auto: [vychozi] -> [auto] -> [profil_<varianta>] (varianta rizeni ma posledni slovo).
+static func load_car(car_id: String, profile := "") -> CarTuning:
 	var t := CarTuning.new()
 	t.id = car_id
 	var cfg := ConfigFile.new()
@@ -59,6 +63,8 @@ static func load_car(car_id: String) -> CarTuning:
 		t._read_section(cfg, car_id)
 	else:
 		push_warning("Auto '%s' v %s neexistuje." % [car_id, PATH])
+	if profile != "" and cfg.has_section("profil_" + profile):
+		t._read_section(cfg, "profil_" + profile)
 	return t
 
 
@@ -68,13 +74,18 @@ static func list_cars() -> PackedStringArray:
 	var result := PackedStringArray()
 	if cfg.load(PATH) == OK:
 		for s in cfg.get_sections():
-			if s != "vychozi" and CarModel.has_model(cfg.get_value(s, "model", s)):
+			if s != "vychozi" and not s.begins_with("profil_") and CarModel.has_model(cfg.get_value(s, "model", s)):
 				result.append(s)
 	return result
 
 
 func _read_section(cfg: ConfigFile, section: String) -> void:
 	for key in cfg.get_section_keys(section):
+		if key == "nasobek_prilnavosti":
+			var k := float(cfg.get_value(section, key))
+			prilnavost_predni *= k
+			prilnavost_zadni *= k
+			continue
 		if not key in self:
 			push_warning("Neznama hodnota '%s' v sekci [%s] souboru auta.cfg" % [key, section])
 			continue

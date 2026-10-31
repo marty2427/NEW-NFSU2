@@ -63,6 +63,8 @@ var _yaw_inertia := 2500.0
 var _drift_mode := false
 var _drift_idle := 0.0
 var _impact_timer := 0.0
+var _hb_time := 0.0                # jak dlouho je drzena rucni brzda
+var _neutral_time := 0.0           # jak dlouho je volant rovne (konec driftu)
 
 
 func _ready() -> void:
@@ -82,7 +84,7 @@ func _ready() -> void:
 ## Postavi auto podle zadaneho id (sekce v auta.cfg). Lze volat znovu pro zmenu auta.
 func setup(new_id: String) -> void:
 	car_id = new_id
-	t = CarTuning.load_car(car_id)
+	t = CarTuning.load_car(car_id, Hra.profile)
 	for child in get_children():
 		if String(child.name) in ["Vzhled", "Kolize", "KolizeKabina"]:
 			remove_child(child)
@@ -381,7 +383,9 @@ func _physics_process(delta: float) -> void:
 			spin_speed *= 1.6
 		spin.rotate_object_local(Vector3.RIGHT, -spin_speed * delta)
 		if w.front:
-			wheel_node.rotation.y = steer_angle
+			# Vzhled: kola jsou natocena viditelne i ve vysoke rychlosti
+			var visual := -_steer_input * deg_to_rad(t.max_natoceni_kol) * lerpf(1.0, 0.45, clampf(v_abs / 40.0, 0.0, 1.0)) * t.natoceni_kol_vizual
+			wheel_node.rotation.y = visual if absf(visual) > absf(steer_angle) else steer_angle
 
 	# --- Drift ---
 	var lateral_speed := linear_velocity.dot(bas.x)
@@ -421,9 +425,10 @@ func _physics_process(delta: float) -> void:
 				target_yaw += drift_side * deg_to_rad(drift_angle - 20.0) * 3.0
 			# Auto jede tam, kam miri (arkadova prilnavost)
 			var lat := v_flat.dot(right_flat)
-			var align := clampf(-lat * mass * 4.0 * t.stabilita, -mass * grip_acc * 0.6, mass * grip_acc * 0.6)
+			var align_max := mass * grip_acc * 0.6 * t.stabilita
+			var align := clampf(-lat * mass * 4.0 * t.stabilita, -align_max, align_max)
 			apply_central_force(right_flat * align * assist_scale)
-		var yaw_torque := (target_yaw - yaw_rate) * _yaw_inertia * 7.0 * t.pomoc_zataceni
+		var yaw_torque := (target_yaw - yaw_rate) * _yaw_inertia * 7.0 * t.pomoc_zataceni * t.rychlost_otaceni
 		yaw_torque = clampf(yaw_torque, -_yaw_inertia * 14.0, _yaw_inertia * 14.0)
 		apply_torque(up * yaw_torque * assist_scale)
 		# Pritlak
@@ -453,14 +458,19 @@ func _physics_process(delta: float) -> void:
 ## Drift zacina rucni brzdou v zatacce, trva dokud auto jede bokem a hrac drzi plyn.
 func _update_drift_mode(delta: float, v_abs: float, fwd_speed: float) -> void:
 	var v_flat := Vector2(linear_velocity.x, linear_velocity.z).length()
+	_hb_time = _hb_time + delta if in_handbrake else 0.0
 	if not _drift_mode:
-		if in_handbrake and v_abs > 8.0 and absf(_steer_input) > 0.2 and fwd_speed > 0.0 and grounded_wheels >= 2:
+		# Drift zacne az po kratkem podrzeni rucni brzdy v zatacce (ne nahodou)
+		if _hb_time >= t.drift_vstup and v_abs > 11.0 and absf(_steer_input) > 0.35 and fwd_speed > 0.0 and grounded_wheels >= 2:
 			_drift_mode = true
 			_drift_idle = 0.0
+			_neutral_time = 0.0
 		return
 	var active := in_throttle > 0.1 or in_handbrake
 	_drift_idle = 0.0 if active else _drift_idle + delta
-	if drift_angle < 5.0 or v_flat < 4.0 or drift_angle > 110.0 or _drift_idle > 0.5 or grounded_wheels == 0:
+	# Volant rovne (nebo pusteny) = hrac chce ven z driftu
+	_neutral_time = _neutral_time + delta if absf(_steer_input) < 0.15 and not in_handbrake else 0.0
+	if drift_angle < 6.0 or v_flat < 4.0 or drift_angle > 110.0 or _drift_idle > 0.35 or _neutral_time > 0.3 or grounded_wheels == 0:
 		_drift_mode = false
 
 

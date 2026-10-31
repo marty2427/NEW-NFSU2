@@ -19,6 +19,7 @@ var _mats := {}
 var _lamp_positions: Array[Transform3D] = []
 var _building_shader: Shader
 var signs: NeonSigns
+var ground_material: ShaderMaterial
 
 
 func build() -> void:
@@ -145,6 +146,7 @@ func _build_ground() -> void:
 	mat.set_shader_parameter("road_half", ROAD_HALF)
 	mat.set_shader_parameter("city_rect", Vector4(LINES[0], LINES[0], LINES[-1], LINES[-1]))
 	mat.set_shader_parameter("lot_rect", Vector4(LOT_RECT.position.x, LOT_RECT.position.y, LOT_RECT.end.x, LOT_RECT.end.y))
+	ground_material = mat
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(6000, 6000)
 	var mi := mesh_at(plane, mat, Vector3.ZERO, body)

@@ -20,6 +20,8 @@ func _ready() -> void:
 	_action("auto_3", [KEY_3], [], [])
 	_action("grafika", [KEY_F5], [], [])
 	_action("nacist_ladeni", [KEY_F6], [], [])
+	_action("varianta_rizeni", [KEY_F7], [JOY_BUTTON_RIGHT_STICK], [])
+	_action("den_noc", [KEY_F8], [], [])
 	_action("fps", [KEY_F3], [], [])
 	_action("cela_obrazovka", [KEY_F11], [], [])
 	_action("test_poskozeni", [KEY_K], [], [])

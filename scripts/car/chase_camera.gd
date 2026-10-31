@@ -9,7 +9,7 @@ const VIEWS := [
 	{"name": "Kapota", "dist": -0.4, "height": 1.25, "look_height": 1.15},
 ]
 
-@export var target: Car
+@export var target: RigidBody3D  # Car nebo GevpCar
 var view_index := 0
 var base_fov := 66.0
 
@@ -83,7 +83,7 @@ func _physics_process(delta: float) -> void:
 
 	# Otres: pri narazu + jemne chveni v rychlosti a pri nitru
 	var shake := _shake * _shake + smoothstep(0.55, 1.0, speed_f) * 0.035
-	if target.nitro_active:
+	if target.get("nitro_active"):
 		shake += 0.06
 	if shake > 0.001:
 		var n1 := _noise.get_noise_2d(_time * 40.0, 0.0)
@@ -99,7 +99,7 @@ func _physics_process(delta: float) -> void:
 
 	# Zorne pole podle rychlosti a nitra
 	var target_fov := base_fov + speed_f * 18.0
-	if target.nitro_active:
+	if target.get("nitro_active"):
 		target_fov += 9.0
 	_fov = lerpf(_fov, target_fov, 1.0 - exp(-3.5 * delta))
 	fov = _fov

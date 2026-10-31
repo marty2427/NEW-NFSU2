@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (2. kolo úprav podle zpětné vazby): HOTOVO, čeká na otestování hráčem.**
+**Fáze 1b (3. kolo úprav – řízení, tachometr, den): HOTOVO, čeká na otestování hráčem.**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -47,6 +47,19 @@
   svislé hotelové cedule, šipky s běžícím světlem, blikající neony, billboardy se žárovkami. ✅
 - Kód NFSU2 není veřejný (EA), nelze ho použít – řízení je postavené na stejných arkádových principech.
 
+## Zpětná vazba hráče – 3. kolo (a co se s ní udělalo)
+- Auta pořád málo zatáčela, přední kola nebyla vidět natočená, zatáčelo se jen ruční brzdou,
+  do driftu šla moc snadno a špatně z něj vyjížděla →
+  - varianty řízení na F7: ARKÁDA (výchozí, ~2× ostřejší), SPORT (předchozí), DRIFT, EASY VEHICLE PHYSICS (převzaté, MIT),
+  - přední kola jsou vidět natočená i v rychlosti (jen vzhled),
+  - drift začne až po podržení ruční brzdy (0,3 s) v zatáčce nad 40 km/h; skončí, když hráč srovná volant
+    nebo pustí plyn.
+  Naměřeno (Octavia, 100 km/h, plný rejd): ARKÁDA R≈24 m, DRIFT ≈35 m, SPORT ≈52 m, EVP ≈35 m.
+- Nový otáčkoměr ve stylu NFSU2 (moderně): kouřový ciferník, šikmé číslice, svítící oblouk otáček, převod
+  se šipkou pro přeřazení, velká rychlost, modrý oblouk N2O nahoře vpravo, malý budík turba.
+- Pro vývoj den (F8 přepne na noc s neony).
+- Otázka Blender / jiný engine – zodpovězeno v chatu (Blender je na modely, Godot zůstává).
+
 ## Co je hotovo
 - **Auta** (`scripts/car/car.gd`, `car_model.gd`): 3D modely .glb, nastavení modelů v `data/modely_aut.cfg`
   (kola, materiály, světla, díly pro demolici, opravy modelu). Lak s clearcoatem, brzdová světla, reflektory se stínem.
@@ -88,7 +101,8 @@
 
 ## Vývojářské poznámky
 - Automatický test: `godot --path . -- --autotest [--shots=SLOZKA] [--rychle]`
-- Test řízení: `godot --headless --path . -- --handlingtest=octavia` (zatáčky, slalom, drift)
+- Test řízení: `godot --headless --path . -- [--profil=arkada|sport|drift|gevp] --handlingtest=octavia`
+- Noc místo dne: přidat `--noc`
 - Měření zrychlení: `godot --headless --path . -- --speedtest=octavia`
 - Prohlížeč modelu: `godot --path . res://scenes/dev/model_viewer.tscn -- --view=res://cesta.glb --out=/slozka/prefix`
   nebo s `--car=octavia` (hotové auto).
