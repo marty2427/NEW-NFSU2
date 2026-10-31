@@ -59,7 +59,7 @@ static func _billboard_material(kind: String) -> StandardMaterial3D:
 		"fire":
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-			m.albedo_color = Color(4.0, 2.2, 0.9)
+			m.albedo_color = Color(1.6, 0.9, 0.38)
 		"spark":
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -117,7 +117,7 @@ static func make_smoke(heavy := false) -> GPUParticles3D:
 ## Ohen z motoru.
 static func make_fire() -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = 48
+	p.amount = 28
 	p.lifetime = 0.7
 	p.visibility_aabb = AABB(Vector3(-4, -1, -4), Vector3(8, 8, 8))
 	var pm := ParticleProcessMaterial.new()
@@ -176,7 +176,7 @@ static func spawn_explosion(parent: Node, pos: Vector3, radius := 9.0, force := 
 
 	# Ohniva koule
 	var fire := GPUParticles3D.new()
-	fire.amount = 90
+	fire.amount = 60
 	fire.lifetime = 1.1
 	fire.one_shot = true
 	fire.explosiveness = 0.9
@@ -232,7 +232,7 @@ static func spawn_explosion(parent: Node, pos: Vector3, radius := 9.0, force := 
 	# Zablesk svetla
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.6, 0.25)
-	light.light_energy = 18.0
+	light.light_energy = 12.0
 	light.omni_range = 22.0
 	light.light_volumetric_fog_energy = 3.0
 	root.add_child(light)

@@ -123,7 +123,7 @@ func _build_environment() -> void:
 	env.glow_intensity = 0.9
 	env.glow_strength = 1.05
 	env.glow_bloom = 0.06
-	env.glow_hdr_threshold = 0.9
+	env.glow_hdr_threshold = 1.1
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env.set_glow_level(0, 0.0)
 	env.set_glow_level(1, 1.0)
@@ -301,7 +301,7 @@ func _build_walls() -> void:
 		body.name = "Stena"
 		var strip := BoxMesh.new()
 		strip.size = Vector3(size.x + 0.02, 0.08, size.z + 0.02)
-		_mesh(strip, _material("neon", color, 0.0, 0.3, 6.0), Vector3(0, size.y * 0.5 + 0.04, 0), body)
+		_mesh(strip, _material("neon", color, 0.0, 0.3, 2.5), Vector3(0, size.y * 0.5 + 0.04, 0), body)
 
 
 # ---------------------------------------------------------------------
