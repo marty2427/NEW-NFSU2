@@ -163,7 +163,7 @@ static func build(car: Node3D, t: CarTuning, is_player: bool) -> Dictionary:
 		var spot := SpotLight3D.new()
 		spot.name = "Reflektor%s" % ("L" if side < 0 else "P")
 		spot.light_color = Color(1.0, 0.95, 0.85)
-		spot.light_energy = 6.0
+		spot.light_energy = 10.0
 		spot.spot_range = 45.0
 		spot.spot_angle = 28.0
 		spot.spot_attenuation = 0.6

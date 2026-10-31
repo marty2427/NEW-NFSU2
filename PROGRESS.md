@@ -54,4 +54,5 @@
 
 ## Vývojářské poznámky
 - Automatický test: `godot --path . -- --autotest [--shots=SLOZKA]` (jízda, drift, nitro, poškození, výbuch, náraz do zdi).
+- Snímek auta z boku: `godot --path . -- --snapshot=soubor.png`.
 - Ladicí klávesa K = +25 % poškození.

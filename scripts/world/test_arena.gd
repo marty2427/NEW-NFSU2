@@ -30,6 +30,9 @@ func _ready() -> void:
 	_build_props()
 	_build_signs()
 	_spawn_player()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--snapshot="):
+			add_child(load("res://scripts/dev/snapshot.gd").new())
 	if "--autotest" in OS.get_cmdline_user_args():
 		var tester: Node = load("res://scripts/dev/autotest.gd").new()
 		add_child(tester)

@@ -3,12 +3,12 @@ shader_type spatial;
 
 uniform sampler2D noise_big : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_fine : filter_linear_mipmap, repeat_enable;
-uniform vec3 base_color : source_color = vec3(0.05, 0.05, 0.055);
+uniform vec3 base_color : source_color = vec3(0.075, 0.075, 0.085);
 uniform float puddle_amount : hint_range(0.0, 1.0) = 0.42;
 uniform float wetness : hint_range(0.0, 1.0) = 0.8;
 uniform float scale_big = 0.02;
 uniform float scale_fine = 0.35;
-uniform float bump_strength = 6.0;
+uniform float bump_strength = 2.0;
 
 varying vec3 world_pos;
 
@@ -22,7 +22,7 @@ void fragment() {
 	float fine = texture(noise_fine, p * scale_fine).r;
 	float puddle = smoothstep(1.0 - puddle_amount - 0.04, 1.0 - puddle_amount + 0.04, big);
 
-	vec3 col = base_color * (0.7 + fine * 0.6);
+	vec3 col = base_color * (0.85 + fine * 0.3);
 	col = mix(col, col * 0.4, clamp(puddle + wetness * 0.3, 0.0, 1.0));
 	ALBEDO = col;
 	ROUGHNESS = mix(mix(0.8, 0.32, wetness), 0.02, puddle);
