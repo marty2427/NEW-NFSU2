@@ -6,7 +6,7 @@ extends Control
 ## nahore vpravo modry oblouk N2O, vlevo dole maly budik turba.
 
 const START_DEG := 100.0       # 0 ot./min dole
-const SWEEP_DEG := 245.0       # po smeru hodinovych rucicek az nahoru vpravo
+const SWEEP_DEG := 232.0       # po smeru hodinovych rucicek az nahoru vpravo
 const C_TICK := Color(0.92, 0.95, 1.0)
 const C_CYAN := Color(0.2, 0.85, 1.0)
 const C_PINK := Color(1.0, 0.25, 0.7)
@@ -27,7 +27,7 @@ var _n2o_glow := 0.0
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(480, 440)
+	custom_minimum_size = Vector2(520, 500)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	font = load("res://assets/fonts/RussoOne-Regular.ttf")
 	font_italic = FontVariation.new()
@@ -84,7 +84,7 @@ func _draw() -> void:
 	var gear_max: int = car.t.pocet_rychlosti
 	var cur_gear: int = car.gear
 
-	var c := Vector2(size.x - 205.0, size.y - 200.0)
+	var c := Vector2(size.x - 235.0, size.y - 240.0)
 	var r := 168.0
 
 	# --- Cifernik: kourove sklo s jemnym prechodem ---
@@ -133,18 +133,18 @@ func _draw() -> void:
 	draw_arc(c, 13.0, 0.0, TAU, 32, Color(0.85, 0.9, 1.0, 0.9), 2.5, true)
 
 	# --- Vpravo: rychlostni stupen se sipkou pro preraeni ---
-	var gpos := c + Vector2(62, -12)
+	var gpos := c + Vector2(52, 14)
 	var gcol := C_ORANGE.lerp(Color.WHITE, _gear_flash)
 	_text(gpos + Vector2(34, 22), gear_text, 62, gcol, font_italic, HORIZONTAL_ALIGNMENT_CENTER, 90.0)
 	var shift := cur_gear > 0 and cur_gear < gear_max and _rpm > redline * 0.9
 	var arrow := gpos + Vector2(-8, -6)
 	var acol := C_GREEN if shift else Color(C_GREEN, 0.18)
 	draw_colored_polygon(PackedVector2Array([arrow + Vector2(0, -16), arrow + Vector2(13, 6), arrow + Vector2(-13, 6)]), acol)
-	draw_line(c + Vector2(38, 18), c + Vector2(r - 12, 18), Color(1, 1, 1, 0.18), 2.0, true)
+	draw_line(c + Vector2(30, 44), c + Vector2(r - 14, 44), Color(1, 1, 1, 0.18), 2.0, true)
 
 	# --- Velka rychlost ---
-	_text(c + Vector2(r - 8, 92), "%d" % int(round(_speed)), 78, Color.WHITE, font_italic, HORIZONTAL_ALIGNMENT_RIGHT, 220.0)
-	_text(c + Vector2(r - 12, 122), "KM/H", 22, Color(0.85, 0.9, 1.0, 0.9), font_italic, HORIZONTAL_ALIGNMENT_RIGHT, 120.0)
+	_text(c + Vector2(r - 10, 112), "%d" % int(round(_speed)), 74, Color.WHITE, font_italic, HORIZONTAL_ALIGNMENT_RIGHT, 220.0)
+	_text(c + Vector2(r - 14, 140), "KM/H", 22, Color(0.85, 0.9, 1.0, 0.9), font_italic, HORIZONTAL_ALIGNMENT_RIGHT, 120.0)
 
 	# --- N2O: modry segmentovany oblouk nahore vpravo (dobiji se i driftem) ---
 	var n_start := deg_to_rad(282.0)

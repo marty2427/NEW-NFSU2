@@ -56,7 +56,7 @@ func _ready() -> void:
 	# --- Vpravo dole: otackomer ---
 	_tacho = Tachometer.new()
 	root.add_child(_tacho)
-	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -500, -460, -10, -10)
+	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -530, -510, -10, -10)
 	_tacho.car = car
 
 	# --- Stred: zpravy ---
