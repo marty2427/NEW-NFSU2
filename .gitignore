@@ -1,0 +1,12 @@
+# Godot
+.godot/
+*.import.tmp
+/android/
+# Export
+/export/
+*.exe
+*.pck
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
