@@ -5,7 +5,7 @@ extends Node
 var _time := 0.0
 var _next_log := 0.0
 var _shots_dir := ""
-var _shot_times := [2.0, 4.6, 6.5, 8.0, 10.0, 13.3, 14.5, 15.4, 16.2, 22.4]
+var _shot_times := [2.5, 5.5, 8.0, 10.0, 13.3, 15.4]
 var _events := {}
 var arena: Node
 
@@ -13,6 +13,8 @@ var arena: Node
 func _ready() -> void:
 	arena = get_parent()
 	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--speedtest="):
+			_speed_car = arg.substr(12)
 		if arg.begins_with("--shots="):
 			_shots_dir = arg.substr(8)
 			DirAccess.make_dir_recursive_absolute(_shots_dir)
@@ -33,10 +35,36 @@ func _once(key: String) -> bool:
 	return true
 
 
+var _speed_car := ""
+var _marks := {}
+
+
+func _speed_test(t: float, car: Car) -> void:
+	# Rovinka mimo mesto: plny plyn 45 s, vypis casu na 100/200 km/h a max. rychlosti
+	if t > 0.2 and _once("speed_setup"):
+		car.setup(_speed_car)
+		car.teleport(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(650, 0.6, 600)))
+	_press("plyn", t > 1.5)
+	var drive_t := t - 1.5
+	for kmh in [100, 200]:
+		if car.speed_kmh >= kmh and not _marks.has(kmh) and drive_t > 0.0:
+			_marks[kmh] = drive_t
+			print("[SPEEDTEST] %s 0-%d km/h: %.1f s" % [_speed_car, kmh, drive_t])
+	if t >= _next_log:
+		_next_log += 5.0
+		print("[SPEEDTEST] %s t=%.0f km/h=%.0f gear=%s rpm=%.0f" % [_speed_car, drive_t, car.speed_kmh, car.gear_label(), car.rpm])
+	if t > 47.0:
+		print("[SPEEDTEST] %s konec, max %.0f km/h" % [_speed_car, car.speed_kmh])
+		get_tree().quit()
+
+
 func _physics_process(delta: float) -> void:
 	_time += delta
 	var car: Car = arena.car
 	var t := _time
+	if _speed_car != "":
+		_speed_test(t, car)
+		return
 	_press("plyn", (t > 1.0 and t < 10.0) or (t > 22.6 and t < 23.0))
 	_press("vlevo", t > 4.0 and t < 5.6)
 	_press("rucni_brzda", t > 4.0 and t < 4.5)

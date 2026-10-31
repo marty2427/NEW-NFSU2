@@ -71,6 +71,13 @@ func apply() -> void:
 		if we and we.environment:
 			_apply_environment(we.environment, q)
 
+	# --- Dosah poulicnich lamp (pocet svetel ve scene) ---
+	var fade: float = [70.0, 100.0, 130.0, 180.0][q]
+	for node in get_tree().get_nodes_in_group("street_lights"):
+		var sl := node as Light3D
+		if sl:
+			sl.distance_fade_begin = fade
+
 	# --- Svetla, ktera vrhaji stiny jen ve vyssi kvalite ---
 	for node in get_tree().get_nodes_in_group("shadow_optional"):
 		var light := node as Light3D
