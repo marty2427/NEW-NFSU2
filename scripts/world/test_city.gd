@@ -94,7 +94,7 @@ func _build_environment() -> void:
 	var env := Environment.new()
 	var sky_mat := PanoramaSkyMaterial.new()
 	sky_mat.panorama = load("res://assets/hdri/kloppenheim_07_puresky_2k.hdr")
-	sky_mat.energy_multiplier = 0.14
+	sky_mat.energy_multiplier = 0.08
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
