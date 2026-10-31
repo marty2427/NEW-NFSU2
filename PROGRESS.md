@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b – přepracování podle zpětné vazby: HOTOVO, čeká na otestování hráčem.**
+**Fáze 1b (2. kolo úprav podle zpětné vazby): HOTOVO, čeká na otestování hráčem.**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -31,6 +31,21 @@
 - Bez pruhu poškození v HUD; poškození vidět na autě. ✅ (zatím kouř/oheň/matný lak, promáčkliny ve fázi 2)
 - Moderní tachometr vpravo dole. ✅
 - Začít Octavií. ✅ (výchozí auto)
+
+## Zpětná vazba hráče k fázi 1b (a co se s ní udělalo)
+- FPS: VYSOKÁ 100–120, ULTRA ~80 (RTX 3060 Ti) → rezerva na víc světla.
+- Auta „vůbec nezatáčela“, jen ruční brzdou, hodně klouzala → nové řízení:
+  natočení kol podle rychlosti (kola nepřejdou do smyku), auto se otáčí přesně podle volantu,
+  arkádová přilnavost (auto jede tam, kam míří), drift jen ruční brzdou + plyn/protismyk,
+  pojistka proti roztočení, po smyku/nárazu se auto samo srovná. ✅
+  Naměřeno (všechna 3 auta): 60 km/h → poloměr 10–17 m, 100 km/h → ~52 m, slalom stabilní, bez smyku.
+- Silvia „splašená“, Mustang se překrucoval → zadní přilnavost ≥ přední, menší vliv plynu na smyk. ✅
+- Silvii se „motala kola“ → kola se otáčí kolem skutečné osy pneumatiky, brzdové třmeny se netočí. ✅
+- Pořád moc tma, auto není vidět → expozice 1.45, ambient 1.5, silnější lampy, jemné světlo nad autem hráče,
+  lak méně kovový (víc barvy). ✅
+- Nápisy originálněji → vymyšlené podniky (česky/anglicky), 12 neonových písem, rámované cedule,
+  svislé hotelové cedule, šipky s běžícím světlem, blikající neony, billboardy se žárovkami. ✅
+- Kód NFSU2 není veřejný (EA), nelze ho použít – řízení je postavené na stejných arkádových principech.
 
 ## Co je hotovo
 - **Auta** (`scripts/car/car.gd`, `car_model.gd`): 3D modely .glb, nastavení modelů v `data/modely_aut.cfg`
@@ -72,7 +87,8 @@
 - Počkat na zpětnou vazbu k fázi 1b, opravit chyby, pak fáze 2.
 
 ## Vývojářské poznámky
-- Automatický test: `godot --path . -- --autotest [--shots=SLOZKA]`
+- Automatický test: `godot --path . -- --autotest [--shots=SLOZKA] [--rychle]`
+- Test řízení: `godot --headless --path . -- --handlingtest=octavia` (zatáčky, slalom, drift)
 - Měření zrychlení: `godot --headless --path . -- --speedtest=octavia`
 - Prohlížeč modelu: `godot --path . res://scenes/dev/model_viewer.tscn -- --view=res://cesta.glb --out=/slozka/prefix`
   nebo s `--car=octavia` (hotové auto).

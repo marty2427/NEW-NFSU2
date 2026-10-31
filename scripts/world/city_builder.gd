@@ -10,10 +10,6 @@ const CURB := 0.15          # vyska obrubniku
 const LINES := [-180.0, -90.0, 0.0, 90.0, 180.0]
 const LOT_RECT := Rect2(196.0, -110.0, 210.0, 220.0)   # parkoviste (x, z, sirka, hloubka)
 
-const SIGNS := ["RAMEN 24/7", "MOTEL", "NITRO GARAGE", "PIXEL BAR", "KARAOKE", "TURBO WASH",
-	"NOODLES", "ARCADE", "PIZZA", "TATTOO", "CLUB NEON", "HOTEL", "SUSHI", "CASINO", "DINER",
-	"AUTO PARTS", "TIRES", "BURGER", "DISCO", "KEBAB", "HERNA", "VEČERKA", "PIVNICE", "POTRAVINY",
-	"NONSTOP", "BAR", "CINEMA", "PHARMACY", "TAXI", "LOUNGE"]
 const NEON := [Color(1.0, 0.15, 0.75), Color(0.1, 0.85, 1.0), Color(1.0, 0.5, 0.1),
 	Color(0.6, 0.25, 1.0), Color(0.2, 1.0, 0.45), Color(1.0, 0.2, 0.2)]
 const FACADES := ["concrete_tile_facade", "exterior_wall_cladding", "red_brick"]
@@ -22,11 +18,16 @@ var rng := RandomNumberGenerator.new()
 var _mats := {}
 var _lamp_positions: Array[Transform3D] = []
 var _building_shader: Shader
+var signs: NeonSigns
 
 
 func build() -> void:
 	rng.seed = 2427
 	_building_shader = load("res://shaders/building.gdshader")
+	signs = NeonSigns.new()
+	signs.name = "NeonoveCedule"
+	signs.rng.seed = 99
+	add_child(signs)
 	_build_ground()
 	_build_city_blocks()
 	_build_outer_ring()
@@ -120,32 +121,6 @@ func noise_texture(freq: float, size: int, seed_value: int) -> NoiseTexture2D:
 	return tex
 
 
-## Neonovy napis (vymysleny, zadne skutecne znacky).
-func neon_text(text: String, pos: Vector3, yaw_deg: float, pixel: float, color: Color, font_size := 160, with_light := true) -> void:
-	var label := Label3D.new()
-	label.text = text
-	label.font_size = font_size
-	label.pixel_size = pixel
-	label.modulate = Color(color.r * 1.8, color.g * 1.8, color.b * 1.8)
-	label.outline_modulate = Color(color.r, color.g, color.b, 0.55)
-	label.outline_size = 16
-	label.shaded = false
-	label.double_sided = false
-	label.position = pos
-	label.rotation_degrees = Vector3(0, yaw_deg, 0)
-	add_child(label)
-	if with_light:
-		var light := OmniLight3D.new()
-		light.light_color = color
-		light.light_energy = 2.5
-		light.omni_range = 12.0
-		light.distance_fade_enabled = true
-		light.distance_fade_begin = 120.0
-		light.distance_fade_length = 30.0
-		light.position = pos + Basis(Vector3.UP, deg_to_rad(yaw_deg)) * Vector3(0, -1.0, 1.5)
-		add_child(light)
-
-
 # ---------------------------------------------------------------------
 #  Zem (asfalt se znacenim)
 # ---------------------------------------------------------------------
@@ -156,7 +131,7 @@ func _build_ground() -> void:
 	add_child(body)
 	var cs := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(1400, 2, 1400)
+	shape.size = Vector3(6000, 2, 6000)
 	cs.shape = shape
 	cs.position = Vector3(0, -1, 0)
 	body.add_child(cs)
@@ -171,7 +146,7 @@ func _build_ground() -> void:
 	mat.set_shader_parameter("city_rect", Vector4(LINES[0], LINES[0], LINES[-1], LINES[-1]))
 	mat.set_shader_parameter("lot_rect", Vector4(LOT_RECT.position.x, LOT_RECT.position.y, LOT_RECT.end.x, LOT_RECT.end.y))
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(1400, 1400)
+	plane.size = Vector2(6000, 6000)
 	var mi := mesh_at(plane, mat, Vector3.ZERO, body)
 	mi.name = "Asfalt"
 
@@ -252,21 +227,26 @@ func building(holder: Node3D, lot: Rect2, height: float) -> void:
 		[Vector3(size.x * 0.5 + 0.06, 0, 0), 90.0, size.z],
 	]
 	for s in sides:
-		if rng.randf() < 0.55:
-			var c: Color = NEON[rng.randi() % NEON.size()]
-			var along: float = s[2]
-			var off := rng.randf_range(-along * 0.3, along * 0.3)
-			var dir := Basis(Vector3.UP, deg_to_rad(s[1]))
+		var along: float = s[2]
+		var dir := Basis(Vector3.UP, deg_to_rad(s[1]))
+		if rng.randf() < 0.6:
+			var off := rng.randf_range(-along * 0.25, along * 0.25)
 			var pos: Vector3 = center + s[0] + dir * Vector3(off, 0, 0)
-			pos.y = CURB + 5.4
-			neon_text(SIGNS[rng.randi() % SIGNS.size()], pos, s[1], 0.022, c, 150, rng.randf() < 0.25)
-	# Velka reklama na strese nekterych budov
+			pos.y = CURB + 5.5
+			signs.shop_sign(pos, s[1], minf(along * 0.6, 14.0))
+		# Svisla cedule u rohu vyssich budov
+		if height > 20.0 and rng.randf() < 0.22:
+			var corner := (along * 0.5 - 1.2) * (1.0 if rng.randf() < 0.5 else -1.0)
+			var bpos: Vector3 = center + s[0] + dir * Vector3(corner, 0, 0)
+			bpos.y = CURB + rng.randf_range(9.0, 13.0)
+			signs.blade_sign(bpos, s[1])
+	# Billboard na strese nekterych budov
 	if height < 45.0 and rng.randf() < 0.3:
-		var c: Color = NEON[rng.randi() % NEON.size()]
 		var yaw: float = [0.0, 90.0, 180.0, -90.0][rng.randi() % 4]
-		var frame_pos := center + Vector3(0, height * 0.5 + 4.0, 0)
-		static_box(Vector3(12, 5, 0.4), Transform3D(Basis(Vector3.UP, deg_to_rad(yaw)), frame_pos), simple(Color(0.03, 0.03, 0.04), 0.4, 0.5), self, false)
-		neon_text(SIGNS[rng.randi() % SIGNS.size()], frame_pos + Basis(Vector3.UP, deg_to_rad(yaw)) * Vector3(0, 0, 0.25), yaw, 0.045, c, 160, true)
+		signs.billboard(center + Vector3(0, height * 0.5 + 3.8, 0), yaw)
+		var leg := simple(Color(0.15, 0.15, 0.17), 0.8, 0.4)
+		for lx in [-4.5, 4.5]:
+			static_box(Vector3(0.3, 1.2, 0.3), Transform3D(Basis(Vector3.UP, deg_to_rad(yaw)), center + Vector3(0, height * 0.5 + 0.6, 0) + Basis(Vector3.UP, deg_to_rad(yaw)) * Vector3(lx, 0, -0.3)), leg, self, false)
 
 
 # ---------------------------------------------------------------------
@@ -363,14 +343,16 @@ func _build_parking_lot() -> void:
 		l.position = Vector3(r.end.x - wh.x - 1.8, 5.5, door_z)
 		l.rotation_degrees = Vector3(-90, 0, 0)
 		holder.add_child(l)
-	neon_text("NITRO GARAGE", Vector3(r.end.x - wh.x - 1.2, 9.0, r.get_center().y), -90.0, 0.06, NEON[0], 220, true)
+	signs.big_text("NITRO GARÁŽ", "stencil", Vector3(r.end.x - wh.x - 1.2, 9.0, r.get_center().y), -90.0, 0.055, NEON[0], 220)
+	for i in 3:
+		signs.arrow_sign(Vector3(r.end.x - wh.x - 1.25, 6.4, r.get_center().y - 40.0 + i * 40.0), -90.0)
 
 	# Velky napis NEON WRECK
 	var sign_pos := Vector3(r.get_center().x - 20.0, 10.0, r.position.y + 6.0)
 	static_box(Vector3(30, 7, 0.5), Transform3D(Basis(), sign_pos + Vector3(0, 0, -0.4)), simple(Color(0.03, 0.03, 0.05), 0.5, 0.4), holder)
 	for lx in [-11.0, 11.0]:
 		static_box(Vector3(0.6, sign_pos.y - 3.5, 0.6), Transform3D(Basis(), Vector3(sign_pos.x + lx, (sign_pos.y - 3.5) * 0.5, sign_pos.z - 0.4)), simple(Color(0.15, 0.15, 0.17), 0.8, 0.4), holder)
-	neon_text("NEON WRECK", sign_pos, 0.0, 0.07, NEON[0], 260, true)
+	signs.big_text("NEON WRECK", "monoton", sign_pos, 0.0, 0.06, NEON[0], 260)
 
 	# Rampy
 	var ramp_mat := pbr("concrete_floor_worn_001", 0.4, Color(0.6, 0.6, 0.65))
@@ -532,7 +514,7 @@ func _build_street_lamps() -> void:
 				glows_c.append(glow_xf)
 			var spot := SpotLight3D.new()
 			spot.light_color = warm if is_warm else cool
-			spot.light_energy = 16.0 if not tall else 22.0
+			spot.light_energy = 26.0 if not tall else 34.0
 			spot.spot_range = h * 2.0
 			spot.spot_angle = 58.0
 			spot.spot_attenuation = 0.7

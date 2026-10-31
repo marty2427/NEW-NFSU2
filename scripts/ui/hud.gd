@@ -31,10 +31,7 @@ const NEON_CYAN := Color(0.13, 0.9, 1.0)
 
 func _ready() -> void:
 	layer = 10
-	var sf := SystemFont.new()
-	sf.font_names = PackedStringArray(["Bahnschrift", "Segoe UI", "Arial", "DejaVu Sans", "Sans-Serif"])
-	sf.font_weight = 700
-	_font = sf
+	_font = load("res://assets/fonts/RussoOne-Regular.ttf")
 
 	# Efekty pres celou obrazovku (pod ukazateli)
 	var fx_layer := CanvasLayer.new()

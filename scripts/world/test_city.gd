@@ -22,7 +22,7 @@ func _ready() -> void:
 		if arg.begins_with("--snapshot="):
 			add_child(load("res://scripts/dev/snapshot.gd").new())
 	for arg in OS.get_cmdline_user_args():
-		if arg == "--autotest" or arg.begins_with("--speedtest="):
+		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
 
 
@@ -94,7 +94,7 @@ func _build_environment() -> void:
 	var env := Environment.new()
 	var sky_mat := PanoramaSkyMaterial.new()
 	sky_mat.panorama = load("res://assets/hdri/kloppenheim_07_puresky_2k.hdr")
-	sky_mat.energy_multiplier = 0.1
+	sky_mat.energy_multiplier = 0.14
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
@@ -103,12 +103,12 @@ func _build_environment() -> void:
 	env.sky_rotation = Vector3(0, deg_to_rad(40.0), 0)
 	# Rovnomerne nocni osvetleni "mestskou zari", aby nic nebylo uplne cerne
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.34, 0.38, 0.55)
-	env.ambient_light_energy = 0.9
+	env.ambient_light_color = Color(0.36, 0.4, 0.56)
+	env.ambient_light_energy = 1.5
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.2
+	env.tonemap_exposure = 1.45
 	env.tonemap_white = 8.0
 
 	env.glow_enabled = true

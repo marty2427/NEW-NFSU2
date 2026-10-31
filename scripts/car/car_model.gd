@@ -179,27 +179,57 @@ func _setup_wheels(scene: Node, holder: Node3D, c: Callable) -> void:
 		template.free()
 	else:
 		var groups: Array = c.call("kola_uzly", [])
+		var non_spin: Array = c.call("kolo_nerotuje", ["Cal"])
 		for i in groups.size():
 			var nodes: Array[Node3D] = []
 			for nm in groups[i]:
 				var n := _find(scene, nm) as Node3D
 				if n:
 					nodes.append(n)
-			var box := AABB()
-			var first := true
+			# Pneumatika = nejvetsi dil kola; podle ni se urci stred a osa otaceni
+			var tire: MeshInstance3D = null
+			var best := -1.0
 			for n in nodes:
 				for mi in ([n] + n.find_children("*", "MeshInstance3D", true, false)):
 					if mi is MeshInstance3D and (mi as MeshInstance3D).mesh:
-						var a: AABB = xform_to(mi, self) * (mi as MeshInstance3D).mesh.get_aabb()
-						box = a if first else box.merge(a)
-						first = false
-			var center := box.get_center()
-			_make_pivot(i, center)
+						var vol := (xform_to(mi, self) * (mi as MeshInstance3D).mesh.get_aabb()).get_volume()
+						if vol > best:
+							best = vol
+							tire = mi
+			if tire == null:
+				continue
+			var txf := xform_to(tire, self)
+			var laabb := tire.mesh.get_aabb()
+			var center := txf * laabb.get_center()
+			var sz := laabb.size
+			var axis_local := Vector3.RIGHT if (sz.x <= sz.y and sz.x <= sz.z) else (Vector3.UP if sz.y <= sz.z else Vector3.BACK)
+			var axle := (txf.basis * axis_local).normalized()
+			if axle.x < 0.0:
+				axle = -axle
+			var yv := (Vector3.UP - axle * axle.dot(Vector3.UP)).normalized()
+			var spin_basis := Basis(axle, yv, axle.cross(yv).normalized())
+			var pivot := _make_pivot(i, center)
+			wheel_spins[i].transform = Transform3D(spin_basis, Vector3.ZERO)
+			var spin_xf := Transform3D(spin_basis, center)
+			# Dily, ktere se netoci (brzdove trmeny), patri na otocny uzel kola, ne na rotaci
+			var fixed: Array[Node3D] = []
+			for n in nodes:
+				for d in ([n] + n.find_children("*", "Node3D", true, false)):
+					for key in non_spin:
+						if String(d.name).begins_with(key) and not fixed.any(func(f): return f.is_ancestor_of(d)):
+							fixed.append(d)
+			var fixed_xf := {}
+			for d in fixed:
+				fixed_xf[d] = xform_to(d, self)
 			for n in nodes:
 				var xf := xform_to(n, self)
 				n.get_parent().remove_child(n)
 				wheel_spins[i].add_child(n)
-				n.transform = Transform3D(Basis(), -center) * xf
+				n.transform = spin_xf.affine_inverse() * xf
+			for d in fixed:
+				d.get_parent().remove_child(d)
+				pivot.add_child(d)
+				d.transform = Transform3D(Basis(), center).affine_inverse() * (fixed_xf[d] as Transform3D)
 
 
 func _make_pivot(i: int, pos: Vector3) -> Node3D:
@@ -335,8 +365,8 @@ static func _std(color: Color, metallic: float, roughness: float) -> StandardMat
 static func _paint_material(color: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
-	m.metallic = 0.55
-	m.roughness = 0.32
+	m.metallic = 0.35
+	m.roughness = 0.3
 	m.metallic_specular = 0.6
 	m.clearcoat_enabled = true
 	m.clearcoat = 1.0
@@ -378,3 +408,14 @@ func _setup_lights(holder: Node3D, c: Callable, is_player: bool) -> void:
 	underglow.position = Vector3(0, 0.12, 0)
 	underglow.visible = false
 	lights_node.add_child(underglow)
+	if is_player:
+		# Jemne "studiove" svetlo nad autem hrace - auto je videt i v tmavych mistech
+		var key := OmniLight3D.new()
+		key.name = "SvetloNadAutem"
+		key.light_color = Color(0.85, 0.9, 1.0)
+		key.light_energy = 1.4
+		key.light_specular = 0.7
+		key.omni_range = 7.5
+		key.omni_attenuation = 1.2
+		key.position = Vector3(0, 3.2, 0.6)
+		lights_node.add_child(key)

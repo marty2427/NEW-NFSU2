@@ -20,10 +20,7 @@ var _last_gear := 1
 func _ready() -> void:
 	custom_minimum_size = Vector2(380, 430)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sf := SystemFont.new()
-	sf.font_names = PackedStringArray(["Bahnschrift", "Segoe UI", "Arial", "DejaVu Sans", "Sans-Serif"])
-	sf.font_weight = 700
-	font = sf
+	font = load("res://assets/fonts/Audiowide-Regular.ttf")
 
 
 func _process(delta: float) -> void:

@@ -57,6 +57,12 @@ var _pending_impact: Dictionary = {}
 var _upside_down_time := 0.0
 var _tire_smoke: Array[GPUParticles3D] = []
 var _nitro_flames: Array[GPUParticles3D] = []
+var _steer_input := 0.0            # vyhlazeny vstup volantu
+var _wheelbase := 2.7
+var _yaw_inertia := 2500.0
+var _drift_mode := false
+var _drift_idle := 0.0
+var _impact_timer := 0.0
 
 
 func _ready() -> void:
@@ -122,6 +128,9 @@ func setup(new_id: String) -> void:
 			"load": 0.0,
 			"slip": 0.0,
 		})
+	_wheelbase = maxf(absf(model.wheel_rest[0].z - model.wheel_rest[2].z), 1.5) if model.wheel_rest.size() >= 4 else 2.7
+	_yaw_inertia = mass * (body.size.z * body.size.z + body.size.x * body.size.x) / 12.0
+	_drift_mode = false
 	_setup_drivetrain()
 	_setup_effects()
 	repair()
@@ -181,8 +190,8 @@ func repair() -> void:
 	_damage_pull = 0.0
 	if model and model.paint:
 		model.paint.albedo_color = t.barva
-		model.paint.metallic = 0.55
-		model.paint.roughness = 0.32
+		model.paint.metallic = 0.35
+		model.paint.roughness = 0.3
 		model.paint.clearcoat = 1.0
 	if model:
 		for beam in model.beams:
@@ -243,11 +252,19 @@ func _physics_process(delta: float) -> void:
 	var dmg := damage_ratio()
 
 	# --- Zataceni ---
-	var speed_factor := clampf(speed_kmh / t.max_rychlost, 0.0, 1.0)
-	var max_steer := deg_to_rad(t.max_natoceni_kol) * lerpf(1.0, t.natoceni_ve_vysoke_rychlosti, speed_factor)
-	max_steer *= 1.0 - dmg * 0.25
-	var target_steer := -in_steer * max_steer + _damage_pull * dmg
-	steer_angle = move_toward(steer_angle, target_steer, t.rychlost_volantu * delta)
+	# Vstup se vyhladi (klavesnice), pri pusteni se volant vraci rychleji
+	var steer_rate := t.rychlost_volantu * (1.8 if absf(in_steer) < absf(_steer_input) else 1.0)
+	_steer_input = move_toward(_steer_input, in_steer, steer_rate * delta)
+	# Natoceni kol podle rychlosti: v kazde rychlosti auto zataci tak ostre,
+	# jak to pneumatiky unesou (predni kola neprejdou do smyku = auto zataci).
+	var v_abs := absf(fwd_speed)
+	var grip_acc := minf(t.prilnavost_predni, t.prilnavost_zadni) * t.mokra_silnice * GRAVITY * (1.0 - dmg * 0.2)
+	var k_lock := tan(deg_to_rad(t.max_natoceni_kol)) / _wheelbase
+	var k_grip := grip_acc * t.pomoc_zataceni / maxf(v_abs * v_abs, 0.01)
+	var k_cmd := -_steer_input * minf(k_lock, k_grip)   # zakriveni drahy (1/m), + = doleva
+	var target_steer := atan(k_cmd * _wheelbase) + _damage_pull * dmg
+	steer_angle = move_toward(steer_angle, target_steer, 5.0 * delta)
+	_impact_timer = maxf(0.0, _impact_timer - delta)
 
 	# --- Nitro ---
 	nitro_active = in_nitro and nitro > 0.0 and in_throttle > 0.1 and not destroyed
@@ -328,6 +345,8 @@ func _physics_process(delta: float) -> void:
 			rear_slip = maxf(rear_slip, slip)
 			if in_handbrake:
 				mu *= t.prilnavost_rucni_brzda
+			elif _drift_mode:
+				mu *= t.prilnavost_v_driftu
 		var max_force := mu * spring_force
 
 		# Podelne sily: motor, brzdy, valivy odpor
@@ -335,6 +354,8 @@ func _physics_process(delta: float) -> void:
 		if w.driven and drive_force != 0.0:
 			var demand := drive_force / maxi(driven_count, 1)
 			var cap := spring_force * TRACTION * (1.0 - dmg * 0.2)
+			if _drift_mode and not w.front:
+				cap *= 0.55  # v driftu zadni kola neroztoci auto
 			if absf(demand) > cap:
 				wheelspin = true
 			long_force += clampf(demand, -cap, cap)
@@ -347,7 +368,7 @@ func _physics_process(delta: float) -> void:
 			long_force -= signf(v_fwd) * minf(t.sila_rucni_brzdy * 0.5, absf(v_fwd) * mass_per_wheel / delta)
 
 		# Kruh prilnavosti: co pneumatika vyuzije na zrychleni, chybi v zatacce
-		var lat_cap := sqrt(maxf(0.0, max_force * max_force - pow(long_force * 0.5, 2.0)))
+		var lat_cap := sqrt(maxf(0.0, max_force * max_force - pow(long_force * 0.3, 2.0)))
 		var lat_force := clampf(-v_lat * mass_per_wheel / delta * 0.9, -lat_cap, lat_cap)
 		apply_force(wheel_right * lat_force + wheel_fwd * long_force, offset)
 
@@ -358,37 +379,56 @@ func _physics_process(delta: float) -> void:
 			spin_speed = 0.0
 		elif w.driven and wheelspin:
 			spin_speed *= 1.6
-		spin.rotate_x(-spin_speed * delta)
+		spin.rotate_object_local(Vector3.RIGHT, -spin_speed * delta)
 		if w.front:
 			wheel_node.rotation.y = steer_angle
 
 	# --- Drift ---
 	var lateral_speed := linear_velocity.dot(bas.x)
 	drift_angle = rad_to_deg(atan2(absf(lateral_speed), maxf(absf(fwd_speed), 0.1)))
-	drifting = grounded_wheels >= 2 and speed > 8.0 and fwd_speed > 0.0 and rear_slip > t.uhel_max_prilnavosti * 1.6 and drift_angle > 8.0
+	_update_drift_mode(delta, v_abs, fwd_speed)
+	drifting = _drift_mode and drift_angle > 10.0
 	if drifting:
 		nitro = minf(1.0, nitro + t.nitro_za_drift * delta)
 
-	if grounded_wheels > 0:
-		# Arkadova pomoc pri zataceni - auto lepe reaguje na volant
+	if grounded_wheels >= 2 and not destroyed:
+		var v_flat := linear_velocity - up * linear_velocity.dot(up)
+		var heading := (-bas.z - up * (-bas.z).dot(up)).normalized()
+		var right_flat := heading.cross(up).normalized()
 		var yaw_rate := angular_velocity.dot(up)
-		var yaw_max := 1.15 if drifting else 1.5
-		var desired_yaw := -in_steer * clampf(speed / 12.0, 0.0, 1.0) * yaw_max * signf(fwd_speed + 0.01)
-		var assist := t.pomoc_zataceni
-		if absf(in_steer) < 0.1 and not in_handbrake:
-			assist *= 1.6  # bez volantu se auto rychle srovna
-		apply_torque(up * (desired_yaw - yaw_rate) * mass * 0.55 * assist * (1.0 - dmg * 0.3))
-		if drifting and (absf(in_steer) > 0.1 or in_handbrake):
-			# Pomoc v driftu: smer jizdy se postupne stoci za predkem auta a rychlost se skoro neztrati
-			var v_flat := linear_velocity - up * linear_velocity.dot(up)
-			var heading := (-bas.z - up * (-bas.z).dot(up)).normalized()
-			var keep := 1.0 if in_throttle > 0.1 else 0.5
-			apply_central_force((heading * v_flat.length() - v_flat) * mass * 1.6 * t.pomoc_driftu * keep)
+		# Po narazu se pomoc na chvili vypne, at je naraz poznat
+		var assist_scale := (1.0 - dmg * 0.3) * (0.15 if _impact_timer > 0.0 else 1.0)
+		var target_yaw: float
+		var drift_side := signf(heading.cross(v_flat.normalized()).dot(up)) if v_flat.length() > 1.0 else 0.0
+		if _drift_mode:
+			# V driftu volant ovlada natoceni auta (protismyk srovnava)
+			var steer_yaw := -_steer_input * t.otaceni_v_driftu * clampf(v_abs / 12.0, 0.0, 1.0)
+			# Kdyz volant toci auto dal do driftu, u maximalniho uhlu se otaceni utlumi
+			if signf(steer_yaw) == -drift_side:
+				steer_yaw *= 1.0 - smoothstep(t.max_uhel_driftu * 0.6, t.max_uhel_driftu, drift_angle)
+			target_yaw = steer_yaw
+			# Smer jizdy se postupne stoci za predkem auta, rychlost se skoro neztrati
+			var keep := 1.0 if in_throttle > 0.1 else 0.6
+			apply_central_force((heading * v_flat.length() - v_flat) * mass * 1.4 * t.pomoc_driftu * keep)
 			# Pojistka proti roztoceni
-			if drift_angle > t.max_uhel_driftu and v_flat.length() > 1.0:
-				var side := signf(heading.cross(v_flat.normalized()).dot(up))
-				apply_torque(up * side * (drift_angle - t.max_uhel_driftu) * mass * 0.12 * t.pomoc_driftu)
+			if drift_angle > t.max_uhel_driftu * 0.85 and v_flat.length() > 1.0:
+				target_yaw += drift_side * deg_to_rad(drift_angle - t.max_uhel_driftu * 0.85) * 10.0
+		else:
+			# Auto se otaci presne tak, jak zataci kola (zadne bezduvodne smyky)
+			target_yaw = fwd_speed * k_cmd
+			# Po smyku nebo narazu se auto samo srovna do smeru jizdy
+			if drift_angle > 20.0 and drift_angle < 120.0 and v_flat.length() > 3.0:
+				target_yaw += drift_side * deg_to_rad(drift_angle - 20.0) * 3.0
+			# Auto jede tam, kam miri (arkadova prilnavost)
+			var lat := v_flat.dot(right_flat)
+			var align := clampf(-lat * mass * 4.0 * t.stabilita, -mass * grip_acc * 0.6, mass * grip_acc * 0.6)
+			apply_central_force(right_flat * align * assist_scale)
+		var yaw_torque := (target_yaw - yaw_rate) * _yaw_inertia * 7.0 * t.pomoc_zataceni
+		yaw_torque = clampf(yaw_torque, -_yaw_inertia * 14.0, _yaw_inertia * 14.0)
+		apply_torque(up * yaw_torque * assist_scale)
 		# Pritlak
+		apply_central_force(-up * speed * speed * t.pritlak * mass / 1000.0)
+	elif grounded_wheels > 0:
 		apply_central_force(-up * speed * speed * t.pritlak * mass / 1000.0)
 	else:
 		# Ve vzduchu: auto se pomalu vyrovnava
@@ -408,6 +448,20 @@ func _physics_process(delta: float) -> void:
 		_upside_down_time = 0.0
 
 	_update_lights()
+
+
+## Drift zacina rucni brzdou v zatacce, trva dokud auto jede bokem a hrac drzi plyn.
+func _update_drift_mode(delta: float, v_abs: float, fwd_speed: float) -> void:
+	var v_flat := Vector2(linear_velocity.x, linear_velocity.z).length()
+	if not _drift_mode:
+		if in_handbrake and v_abs > 8.0 and absf(_steer_input) > 0.2 and fwd_speed > 0.0 and grounded_wheels >= 2:
+			_drift_mode = true
+			_drift_idle = 0.0
+		return
+	var active := in_throttle > 0.1 or in_handbrake
+	_drift_idle = 0.0 if active else _drift_idle + delta
+	if drift_angle < 5.0 or v_flat < 4.0 or drift_angle > 110.0 or _drift_idle > 0.5 or grounded_wheels == 0:
+		_drift_mode = false
 
 
 ## Vrati hnaci silu motoru (N) a aktualizuje otacky a rychlostni stupen.
@@ -501,6 +555,8 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 func _on_impact(dv: float, pos: Vector3, normal: Vector3, collider: Object) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
+	if dv > 4.0:
+		_impact_timer = clampf(dv / 20.0, 0.2, 0.8)
 	impact.emit(self, dv, pos)
 	if now - _last_impact_time > 0.08:
 		FX.spawn_sparks(get_parent(), pos, normal, clampi(int(dv * 6.0), 8, 80))
@@ -526,7 +582,7 @@ func apply_damage(amount: float) -> void:
 	# Lak postupne matni a tmavne
 	var d := damage_ratio()
 	model.paint.albedo_color = t.barva.lerp(t.barva.darkened(0.5), d * 0.6)
-	model.paint.roughness = lerpf(0.32, 0.65, d)
+	model.paint.roughness = lerpf(0.3, 0.65, d)
 	model.paint.clearcoat = 1.0 - d * 0.8
 	_update_damage_effects()
 	damage_changed.emit(self, damage)

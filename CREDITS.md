@@ -33,9 +33,12 @@ a materiály a u Silvie se zavírají otevřené dveře a kapota (úprava za bě
 ## Zvuky a hudba
 - Zatím žádné (přibudou ve fázi 2, pouze CC0 / volné licence).
 
-## Písma
-- Výchozí písmo Godotu (Open Sans, licence OFL); na Windows se v HUD použije systémové písmo Bahnschrift, pokud je k dispozici.
+## Písma (`assets/fonts/`) – licence SIL Open Font License 1.1
+Google Fonts (https://fonts.google.com), plný text licencí v `assets/fonts/LICENCE_OFL.txt`:
+- Monoton, Tilt Neon, Neonderthaw, Pacifico, Bebas Neue, Bungee, Bungee Shade, Righteous,
+  Audiowide, Kaushan Script, Saira Stencil One, Russo One
+- HUD používá Russo One a Audiowide; neonové cedule všechna uvedená písma.
 
 ## Názvy a značky
 - Hra je soukromý projekt, nebude se šířit. Skutečná auta (Škoda, Nissan, Ford) jsou použita
-  se souhlasem vlastníka projektu jen pro osobní použití. Neonové nápisy obchodů jsou vymyšlené.
+  se souhlasem vlastníka projektu jen pro osobní použití. Názvy podniků na neonových cedulích jsou vymyšlené.
