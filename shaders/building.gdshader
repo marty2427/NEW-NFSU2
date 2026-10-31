@@ -11,7 +11,7 @@ uniform float lit_ratio = 0.35;
 uniform vec2 cell = vec2(3.2, 3.6);      // rozestup oken (sirka, vyska patra)
 uniform float window_energy = 1.3;
 uniform float shop_height = 4.6;         // vyska prizemi s vylohami
-uniform float shop_energy = 1.3;
+uniform float shop_energy = 0.9;
 uniform vec3 shop_color : source_color = vec3(1.0, 0.8, 0.55);
 
 varying vec3 wpos;

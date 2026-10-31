@@ -55,6 +55,8 @@ var _fire: GPUParticles3D
 var _last_impact_time := 0.0
 var _pending_impact: Dictionary = {}
 var _upside_down_time := 0.0
+var _tire_smoke: Array[GPUParticles3D] = []
+var _nitro_flames: Array[GPUParticles3D] = []
 
 
 func _ready() -> void:
@@ -121,7 +123,25 @@ func setup(new_id: String) -> void:
 			"slip": 0.0,
 		})
 	_setup_drivetrain()
+	_setup_effects()
 	repair()
+
+
+## Kour od zadnich kol a plameny z vyfuku pri nitru.
+func _setup_effects() -> void:
+	_tire_smoke.clear()
+	_nitro_flames.clear()
+	for i in [2, 3]:
+		var smoke := FX.make_tire_smoke()
+		model.add_child(smoke)
+		smoke.position = Vector3(model.wheel_rest[i].x, 0.15, model.wheel_rest[i].z + 0.2)
+		_tire_smoke.append(smoke)
+	var rear := model.body_aabb.end.z - 0.02
+	for x in [-0.4, 0.4]:
+		var flame := FX.make_nitro_flame()
+		model.add_child(flame)
+		flame.position = Vector3(x, 0.3, rear)
+		_nitro_flames.append(flame)
 
 
 func _add_box(node_name: String, size: Vector3, pos: Vector3) -> void:
@@ -603,6 +623,11 @@ func detach_part(part: Node3D, launch_speed := 3.0) -> RigidBody3D:
 
 
 func _update_lights() -> void:
+	var smoking := not destroyed and grounded_wheels >= 2 and (drifting or (wheelspin and speed_kmh < 60.0) or (in_handbrake and speed_kmh > 20.0))
+	for smoke in _tire_smoke:
+		smoke.emitting = smoking
+	for flame in _nitro_flames:
+		flame.emitting = nitro_active
 	if destroyed:
 		return
 	var braking := (in_brake > 0.1 and get_forward_speed() > 1.0) or in_handbrake

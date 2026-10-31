@@ -5,7 +5,7 @@ extends Node
 var _time := 0.0
 var _next_log := 0.0
 var _shots_dir := ""
-var _shot_times := [2.5, 5.5, 8.0, 10.0, 13.3, 15.4]
+var _shot_times := [2.5, 5.5, 8.0, 10.0, 15.4]
 var _events := {}
 var arena: Node
 
@@ -99,6 +99,8 @@ func _physics_process(delta: float) -> void:
 		var st: float = _shot_times.pop_front()
 		_screenshot("shot_%04.1f.png" % st)
 
+	if _shots_dir != "" and _shot_times.is_empty() and "--rychle" in OS.get_cmdline_user_args():
+		get_tree().quit()
 	if t > 24.0:
 		print("[AUTOTEST] konec")
 		get_tree().quit()

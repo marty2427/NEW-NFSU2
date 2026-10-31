@@ -60,6 +60,11 @@ static func _billboard_material(kind: String) -> StandardMaterial3D:
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 			m.albedo_color = Color(1.6, 0.9, 0.38)
+		"nitro":
+			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			m.albedo_color = Color(0.7, 0.9, 1.8)
+			m.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 		"spark":
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -135,6 +140,57 @@ static func make_fire() -> GPUParticles3D:
 	pm.color_ramp = _ramp([Color(1, 0.9, 0.5, 0.0), Color(1, 0.6, 0.2, 1.0), Color(0.9, 0.2, 0.05, 0.6), Color(0.2, 0.05, 0.0, 0.0)], [0.0, 0.1, 0.5, 1.0])
 	p.process_material = pm
 	p.draw_pass_1 = _quad(Vector2(1.0, 1.0), "fire")
+	return p
+
+
+## Kour od pneumatik pri driftu a prokluzu (zapina se vlastnosti emitting).
+static func make_tire_smoke() -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.amount = 40
+	p.lifetime = 1.6
+	p.emitting = false
+	p.visibility_aabb = AABB(Vector3(-10, -2, -10), Vector3(20, 10, 20))
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 60.0
+	pm.initial_velocity_min = 0.5
+	pm.initial_velocity_max = 1.5
+	pm.gravity = Vector3(0, 0.6, 0)
+	pm.damping_min = 1.0
+	pm.damping_max = 2.0
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = 0.25
+	pm.scale_min = 0.8
+	pm.scale_max = 1.3
+	pm.scale_curve = _curve([Vector2(0, 0.35), Vector2(1, 1.6)])
+	pm.angle_max = 360.0
+	pm.color_ramp = _ramp([Color(0.8, 0.8, 0.85, 0.0), Color(0.75, 0.75, 0.8, 0.35), Color(0.7, 0.7, 0.75, 0.0)], [0.0, 0.15, 1.0])
+	p.process_material = pm
+	p.draw_pass_1 = _quad(Vector2(1.8, 1.8), "smoke")
+	return p
+
+
+## Modry plamen z vyfuku pri nitru (zapina se vlastnosti emitting).
+static func make_nitro_flame() -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.amount = 24
+	p.lifetime = 0.12
+	p.emitting = false
+	p.local_coords = true
+	p.transform_align = GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD_Y_TO_VELOCITY
+	p.visibility_aabb = AABB(Vector3(-2, -2, -2), Vector3(4, 4, 6))
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3(0, 0, 1)
+	pm.spread = 6.0
+	pm.initial_velocity_min = 7.0
+	pm.initial_velocity_max = 10.0
+	pm.gravity = Vector3.ZERO
+	pm.scale_min = 0.6
+	pm.scale_max = 1.0
+	pm.scale_curve = _curve([Vector2(0, 0.7), Vector2(0.3, 1.0), Vector2(1, 0.2)])
+	pm.color_ramp = _ramp([Color(0.8, 0.9, 1.0, 0.9), Color(0.25, 0.45, 1.0, 0.8), Color(0.35, 0.15, 1.0, 0.0)], [0.0, 0.35, 1.0])
+	p.process_material = pm
+	p.draw_pass_1 = _quad(Vector2(0.11, 0.42), "nitro")
 	return p
 
 

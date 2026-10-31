@@ -94,16 +94,17 @@ func _build_environment() -> void:
 	var env := Environment.new()
 	var sky_mat := PanoramaSkyMaterial.new()
 	sky_mat.panorama = load("res://assets/hdri/kloppenheim_07_puresky_2k.hdr")
-	sky_mat.energy_multiplier = 0.4
+	sky_mat.energy_multiplier = 0.1
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.sky_rotation = Vector3(0, deg_to_rad(40.0), 0)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 2.4
-	env.ambient_light_sky_contribution = 1.0
+	# Rovnomerne nocni osvetleni "mestskou zari", aby nic nebylo uplne cerne
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.34, 0.38, 0.55)
+	env.ambient_light_energy = 0.9
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES

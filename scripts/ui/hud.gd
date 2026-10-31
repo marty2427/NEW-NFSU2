@@ -88,7 +88,7 @@ func _ready() -> void:
 	_help.text = "\n".join([
 		"W/S nebo šipky ... plyn / brzda / couvání      A/D ... zatáčení",
 		"MEZERNÍK ... ruční brzda      SHIFT ... nitro      C ... kamera      Q ... pohled vzad",
-		"R ... postavit auto      1 / 2 ... změna auta      F6 ... znovu načíst auta.cfg",
+		"R ... postavit auto      1 / 2 / 3 ... změna auta      F6 ... znovu načíst auta.cfg",
 		"F5 ... kvalita grafiky      F3 ... FPS      F11 ... celá obrazovka      K ... test poškození",
 		"F1 ... skrýt nápovědu      ESC ... konec",
 	])
