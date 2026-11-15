@@ -22,6 +22,8 @@ func _ready() -> void:
 	_action("nacist_ladeni", [KEY_F6], [], [])
 	_action("varianta_rizeni", [KEY_F7], [JOY_BUTTON_RIGHT_STICK], [])
 	_action("den_noc", [KEY_F8], [], [])
+	_action("na_start", [KEY_T], [JOY_BUTTON_LEFT_STICK], [])
+	_action("zvuk", [KEY_M], [], [])
 	_action("fps", [KEY_F3], [], [])
 	_action("cela_obrazovka", [KEY_F11], [], [])
 	_action("test_poskozeni", [KEY_K], [], [])

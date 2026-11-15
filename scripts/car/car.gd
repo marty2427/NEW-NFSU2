@@ -66,6 +66,10 @@ var _drift_mode := false
 var _drift_idle := 0.0
 var _impact_timer := 0.0
 var _hb_time := 0.0                # jak dlouho je drzena rucni brzda
+var _scrape_timer := 0.0
+var _scrape_pos := Vector3.ZERO
+var _scrape_fx := 0.0
+var scraping := false               # auto se prave otira o zed (pro zvuk)
 var _grip_now := 1.0               # aktualni nasobek bocni prilnavosti (drift ji snizuje)
 var slip_angle := 0.0              # uhel smyku se znamenkem (rad), + = auto klouze doprava
 var lateral_g := 0.0               # bocni pretizeni (pro zvuk a efekty)
@@ -447,6 +451,16 @@ func _physics_process(delta: float) -> void:
 		var level_axis := up.cross(Vector3.UP)
 		apply_torque(level_axis * mass * 3.0 - angular_velocity * mass * 0.3)
 
+	# Skrabani o zed stoji rychlost a jiskri
+	_scrape_timer = maxf(0.0, _scrape_timer - delta)
+	scraping = _scrape_timer > 0.0 and speed > 6.0
+	if scraping:
+		apply_central_force(-linear_velocity.normalized() * mass * 3.5)
+		_scrape_fx -= delta
+		if _scrape_fx <= 0.0:
+			_scrape_fx = 0.07
+			FX.spawn_sparks(get_parent(), _scrape_pos, -linear_velocity.normalized() + Vector3.UP * 0.5, 10)
+
 	# Odpor vzduchu (spocitany tak, aby auto jelo svou max. rychlost)
 	apply_central_force(-linear_velocity * speed * _drag)
 
@@ -547,6 +561,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var dv := (v - _prev_velocity).length()
 	_prev_velocity = v
 	var count := state.get_contact_count()
+	# Skrabani o zed: dotyk se svislou plochou pevne prekazky
+	for i in count:
+		if absf(state.get_contact_local_normal(i).y) < 0.5 and state.get_contact_collider_object(i) is StaticBody3D:
+			_scrape_timer = 0.12
+			_scrape_pos = state.get_contact_local_position(i)
+			break
 	if count == 0 or dv < 2.0:
 		return
 	var best := 0
@@ -682,6 +702,7 @@ func detach_part(part: Node3D, launch_speed := 3.0) -> RigidBody3D:
 	body.add_child(shape)
 	get_parent().add_child(body)
 	body.global_transform = Transform3D(xform.basis.orthonormalized(), xform.origin)
+	part.owner = null
 	part.get_parent().remove_child(part)
 	body.add_child(part)
 	part.transform = Transform3D(Basis().scaled(scale_f), Vector3.ZERO)

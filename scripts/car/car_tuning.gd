@@ -8,6 +8,7 @@ const PATH := "res://tuning/auta.cfg"
 var id := ""
 var nazev := "Auto"
 var model := "octavia"
+var zvuk_motoru := "r4"
 var barva := Color(0.8, 0.8, 0.8)
 var hmotnost := 1400.0
 var vykon_kw := 150.0

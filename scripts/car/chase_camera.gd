@@ -4,7 +4,7 @@ extends Camera3D
 ## V rychlosti se kamera mirne vzdali a snizi, roste zorne pole, pri nitru se trese.
 
 const VIEWS := [
-	{"name": "Za autem", "dist": 5.6, "height": 1.75, "look_height": 1.05},
+	{"name": "Za autem", "dist": 5.4, "height": 1.7, "look_height": 1.0},
 	{"name": "Daleko", "dist": 7.8, "height": 2.6, "look_height": 1.2},
 	{"name": "Kapota", "dist": -0.4, "height": 1.25, "look_height": 1.15},
 ]
@@ -17,6 +17,7 @@ var _yaw := 0.0
 var _shake := 0.0
 var _fov := 66.0
 var _lag := 0.0
+var _prev_fwd_speed := 0.0
 var _initialized := false
 var _noise := FastNoiseLite.new()
 var _time := 0.0
@@ -62,23 +63,38 @@ func _physics_process(delta: float) -> void:
 		global_transform = target.global_transform * Transform3D(Basis(), Vector3(0, view_height, view_dist))
 		look_at(target.global_transform * Vector3(0, look_height, -25.0), target.global_basis.y.lerp(Vector3.UP, 0.7))
 	else:
-		# Kamera se natáci za autem s mirnym zpozdenim (v driftu je videt bok auta)
-		_yaw = lerp_angle(_yaw, car_yaw, 1.0 - exp(-4.0 * delta))
+		# Kamera se diva ve smeru jizdy (ne presne za zadkem auta): pri zataceni a ve smyku
+		# je videt, jak se auto natoci - jizda pak pusobi zive.
+		var flat_v := Vector3(target.linear_velocity.x, 0, target.linear_velocity.z)
+		var aim_yaw := car_yaw
+		if flat_v.length() > 6.0 and flat_v.dot(car_fwd) > 0.0:
+			var vel_yaw := atan2(-flat_v.x, -flat_v.z)
+			aim_yaw = lerp_angle(car_yaw, vel_yaw, 0.6)
+		_yaw = lerp_angle(_yaw, aim_yaw, 1.0 - exp(-5.5 * delta))
 		var yaw := _yaw
 		if Input.is_action_pressed("pohled_vzad"):
 			yaw += PI
-		# Pri zrychleni kamera trochu zaostane
-		var accel := target.linear_velocity.dot(car_fwd)
-		_lag = lerpf(_lag, clampf(accel * 0.012, 0.0, 0.9), 1.0 - exp(-2.0 * delta))
+		# Pri zrychleni kamera trochu zaostane, pri brzdeni se priblizi
+		var fwd_speed := target.linear_velocity.dot(car_fwd)
+		var accel := (fwd_speed - _prev_fwd_speed) / maxf(delta, 0.001)
+		_prev_fwd_speed = fwd_speed
+		_lag = lerpf(_lag, clampf(accel * 0.06, -0.45, 0.6), 1.0 - exp(-3.0 * delta))
 		var rot := Basis(Vector3.UP, yaw)
-		var dist := view_dist + speed_f * 1.3 + _lag * 0.6
-		var height := view_height - speed_f * 0.25
+		var dist := view_dist + speed_f * 1.2 + _lag + (0.5 if target.get("nitro_active") else 0.0)
+		var height := view_height - speed_f * 0.2
 		var desired := car_pos + rot * Vector3(0, height, dist)
+		# Kamera nesmi vlezt do budovy: paprsek od auta ke kamere
+		var from := car_pos + Vector3.UP * 1.2
+		var query := PhysicsRayQueryParameters3D.create(from, desired)
+		query.exclude = [target.get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty() and not (hit.collider is RigidBody3D):
+			desired = (hit.position as Vector3) + (from - desired).normalized() * 0.35
 		if global_position.distance_to(desired) > 25.0:
 			global_position = desired
 		else:
-			global_position = global_position.lerp(desired, 1.0 - exp(-14.0 * delta))
-		var look_at_pos := car_pos + Vector3.UP * look_height + rot * Vector3(0, 0, -5.0)
+			global_position = global_position.lerp(desired, 1.0 - exp(-16.0 * delta))
+		var look_at_pos := car_pos + Vector3.UP * look_height + rot * Vector3(0, 0, -6.0)
 		look_at(look_at_pos, Vector3.UP)
 
 	# Otres: pri narazu + jemne chveni v rychlosti a pri nitru

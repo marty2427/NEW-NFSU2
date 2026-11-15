@@ -33,6 +33,7 @@ var rpm := 900.0
 var gear := 1
 var steer_angle := 0.0
 var grounded_wheels := 4
+var wheelspin := false
 
 var _rays: Array[Wheel] = []
 var _reset_to: Variant = null

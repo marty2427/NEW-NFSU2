@@ -35,8 +35,9 @@ a materiály a u Silvie se zavírají otevřené dveře a kapota (úprava za bě
   rozmazání v rychlosti (`speed_blur`), vineta poškození (`vignette`).
 - Šum pro kaluže generuje Godot (FastNoiseLite) za běhu.
 
-## Zvuky a hudba
-- Zatím žádné (přibudou ve fázi 2, pouze CC0 / volné licence).
+## Zvuky (`assets/sounds/`) – vlastní práce projektu
+- Všechny zvuky jsou syntetické, vygenerované skriptem `tools/generuj_zvuky.py` (žádné nahrávky).
+- Hudba zatím žádná.
 
 ## Písma (`assets/fonts/`) – licence SIL Open Font License 1.1
 Google Fonts (https://fonts.google.com), plný text licencí v `assets/fonts/LICENCE_OFL.txt`:

@@ -4,3 +4,7 @@
 *.ogg binary
 *.wav binary
 *.glb binary
+*.bat -text
+*.ttf binary
+*.hdr binary
+*.bin binary

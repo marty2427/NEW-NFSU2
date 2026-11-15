@@ -8,11 +8,10 @@ demolice aut (inspirace FlatOut 2) a zbraně na trati (inspirace Mario Kart).
 - Zdroje a licence: [CREDITS.md](CREDITS.md)
 - Ladění jízdy aut: [tuning/auta.cfg](tuning/auta.cfg)
 
-## Spuštění
-1. Nainstaluj Godot 4.7 (standardní verze, ne .NET).
-2. V Godotu: **Import** → vyber soubor `project.godot` v této složce → **Import & Edit**.
-   Při prvním otevření Godot chvíli načítá modely a textury.
-3. Stiskni **F5** (nebo trojúhelník ▶ vpravo nahoře).
+## Spuštění a aktualizace (Windows)
+- **AKTUALIZOVAT.bat** – dvojklik stáhne z GitHubu jen změny (poprvé si případně nainstaluje Git).
+- **HRAT.bat** – dvojklik spustí hru přímo, bez editoru. Hledá Godot v `C:\Hry\Godot` nebo v této složce.
+- Ručně: v Godotu 4.7 **Import** → `project.godot` → **F5**.
 
 ## Struktura
 - `assets/` – 3D modely aut (`cars`), textury, obloha (`hdri`), rekvizity (`props`)
@@ -22,6 +21,8 @@ demolice aut (inspirace FlatOut 2) a zbraně na trati (inspirace Mario Kart).
 - `scripts/car/` – auto: fyzika, model, kamera, ovládání
 - `scripts/world/` – mapa (město + parkoviště)
 - `scripts/fx/` – efekty (kouř, oheň, jiskry, výbuch, nitro)
+- `assets/sounds/` + `tools/generuj_zvuky.py` – syntetické zvuky
+- `addons/gevp/` – převzaté řízení Easy Vehicle Physics (varianta na F7)
 - `scripts/ui/` – HUD a otáčkoměr
 - `scripts/autoload/` – ovládání a nastavení grafiky
 - `shaders/` – silnice, budovy, efekty obrazovky

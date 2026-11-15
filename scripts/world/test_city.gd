@@ -36,7 +36,7 @@ func _ready() -> void:
 		if arg == "--noc":
 			Hra.toggle_daylight()
 	for arg in OS.get_cmdline_user_args():
-		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap="):
+		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap=") or arg.begins_with("--walltest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
 
 
@@ -51,6 +51,7 @@ func _spawn_player() -> void:
 	camera.global_position = SPAWN.origin + SPAWN.basis * Vector3(0, 2, 7)
 	hud = HUD.new()
 	add_child(hud)
+	hud.circuit = circuit
 	var cars := CarTuning.list_cars()
 	spawn_car(cars[0] if not cars.is_empty() else "octavia", SPAWN)
 	hud.show_message(car.t.nazev, 3.0)
@@ -72,6 +73,7 @@ func spawn_car(id: String, xform: Transform3D) -> void:
 	car.transform = xform
 	add_child(car)
 	car.add_child(PlayerController.new())
+	car.add_child(CarAudio.new())
 	car.exploded.connect(_on_car_exploded)
 	camera.target = car
 	hud.car = car
@@ -103,6 +105,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("den_noc"):
 		Hra.toggle_daylight()
 		hud.show_message("Den" if Hra.daylight else "Noc", 1.5)
+	if event.is_action_pressed("na_start"):
+		# Postavi auto pred startovni branu okruhu
+		var st := Circuit.start_transform()
+		spawn_car(car.car_id, Transform3D(st.basis, st.origin + st.basis.z * 25.0))
+		circuit.reset()
+		hud.show_message("Na startu", 1.5)
+	if event.is_action_pressed("zvuk"):
+		var bus := AudioServer.get_bus_index("Master")
+		AudioServer.set_bus_mute(bus, not AudioServer.is_bus_mute(bus))
+		hud.show_message("Zvuk vypnut" if AudioServer.is_bus_mute(bus) else "Zvuk zapnut", 1.5)
 	if event.is_action_pressed("test_poskozeni"):
 		car.apply_damage(25.0)
 

@@ -9,6 +9,14 @@ var car: Node:  # Car nebo GevpCar
 		if _tacho:
 			_tacho.car = value
 
+var circuit: Circuit:
+	set(value):
+		circuit = value
+		if circuit:
+			circuit.lap_finished.connect(_on_lap_finished)
+
+var _lap_label: Label
+var _lap_flash := 0.0
 var _tacho: Tachometer
 var _info_label: Label
 var _car_label: Label
@@ -53,6 +61,13 @@ func _ready() -> void:
 	_info_label = _label(root, 17, Color(0.75, 0.8, 0.95, 0.85))
 	_info_label.position = Vector2(30, 58)
 
+	# --- Vpravo nahore: cas kola ---
+	_lap_label = _label(root, 30, Color.WHITE)
+	_place(_lap_label, Control.PRESET_TOP_RIGHT, -520, 18, -28, 110)
+	_lap_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_lap_label.add_theme_color_override("font_outline_color", Color(0.05, 0.1, 0.3))
+	_lap_label.add_theme_constant_override("outline_size", 6)
+
 	# --- Vpravo dole: otackomer ---
 	_tacho = Tachometer.new()
 	root.add_child(_tacho)
@@ -80,12 +95,13 @@ func _ready() -> void:
 
 	# --- Vlevo dole: ovladani ---
 	_help = _label(root, 16, Color(0.8, 0.83, 0.95, 0.8))
-	_place(_help, Control.PRESET_BOTTOM_LEFT, 28, -190, 760, -20)
+	_place(_help, Control.PRESET_BOTTOM_LEFT, 28, -210, 760, -20)
 	_help.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_help.text = "\n".join([
 		"W/S nebo šipky ... plyn / brzda / couvání      A/D ... zatáčení",
 		"MEZERNÍK ... ruční brzda      SHIFT ... nitro      C ... kamera      Q ... pohled vzad",
-		"R ... postavit auto      1 / 2 / 3 ... změna auta      F6 ... znovu načíst auta.cfg",
+		"T ... na start okruhu      R ... postavit auto      1 / 2 / 3 ... změna auta",
+		"M ... zvuk      F6 ... znovu načíst auta.cfg",
 		"F5 ... kvalita grafiky      F7 ... varianta řízení      F8 ... den / noc      K ... test poškození",
 		"F3 ... FPS      F11 ... celá obrazovka",
 		"F1 ... skrýt nápovědu      ESC ... konec",
@@ -126,6 +142,15 @@ func _label(parent: Node, font_size: int, color: Color) -> Label:
 	return l
 
 
+static func format_time(sec: float) -> String:
+	return "%d:%05.2f" % [int(sec) / 60, fmod(sec, 60.0)]
+
+
+func _on_lap_finished(time: float, best: float) -> void:
+	_lap_flash = 3.0
+	show_message(("NEJLEPŠÍ KOLO  " if is_equal_approx(time, best) else "KOLO  ") + format_time(time), 3.0)
+
+
 func show_message(text: String, time := 2.5) -> void:
 	_message.text = text
 	_message_time = time
@@ -148,6 +173,17 @@ func _process(delta: float) -> void:
 	if _message_time > 0.0:
 		_message_time -= delta
 		_message.modulate.a = clampf(_message_time / 0.5, 0.0, 1.0)
+
+	if circuit:
+		_lap_flash = maxf(0.0, _lap_flash - delta)
+		if circuit.running:
+			var txt := "KOLO %d   %s" % [circuit.lap_count + 1, format_time(circuit.lap_time)]
+			if circuit.last_time > 0.0:
+				txt += "\nposlední %s   nejlepší %s" % [format_time(circuit.last_time), format_time(circuit.best_time)]
+			_lap_label.text = txt
+		else:
+			_lap_label.text = "OKRUH: projeď bránou START"
+		_lap_label.modulate = Color(0.4, 1.0, 0.5) if _lap_flash > 0.0 else Color.WHITE
 
 	if car == null or not is_instance_valid(car) or car.t == null:
 		return

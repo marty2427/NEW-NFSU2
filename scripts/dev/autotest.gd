@@ -17,6 +17,8 @@ func _ready() -> void:
 			_speed_car = arg.substr(12)
 		if arg.begins_with("--handlingtest="):
 			_handling_car = arg.substr(15)
+		if arg.begins_with("--walltest="):
+			_wall_angle = float(arg.substr(11))
 		if arg.begins_with("--lap="):
 			_lap_car = arg.substr(6)
 		if arg.begins_with("--g="):
@@ -95,6 +97,27 @@ func _lap_test(t: float, car) -> void:
 	if _ai.laps >= 2 or t > 150.0:
 		print("[LAP] %s g=%.2f %s: %.1f s | odchylka od stopy max %.1f m | narazy %d (tvrde %d) | poskozeni %.0f | v min %.0f max %.0f | smyk max %.0f st" % [
 			_lap_car, _lap_g, "kolo 2" if _ai.laps >= 2 else "NEDOJEL (i %d)" % _ai.index, t - _lap_start, _ai.off_line_max, _impacts, _hard_impacts, car.damage, _min_v, _max_v, _max_slip])
+		get_tree().quit()
+
+
+var _wall_angle := -1.0
+
+
+## Test otreni o zed: auto jede 100 km/h pod uhlem do zdi budovy, plny plyn, bez volantu.
+func _wall_test(t: float, car) -> void:
+	if t > 0.2 and _once("wallset"):
+		var basis := Basis(Vector3.UP, PI * 0.5 - deg_to_rad(_wall_angle))
+		arena.spawn_car("octavia", Transform3D(basis, Vector3(60, 0.5, -6)))
+		arena.car.impact.connect(func(_c, dv, pos): print("[WALL] naraz dv=%.1f v miste (%.1f, %.2f, %.1f)" % [dv, pos.x, pos.y, pos.z]))
+		return
+	if t > 1.2 and _once("wallgo"):
+		car.linear_velocity = -car.global_basis.z * 27.8
+	_press("plyn", t > 1.2)
+	if t > 1.2 and t >= _phase_log:
+		_phase_log = t + 0.25
+		var f: Vector3 = -car.global_basis.z
+		print("[WALL] t=%.2f pos=(%.1f, %.1f) v=%.0f km/h smer=%.0f st (0 = podel zdi) poskozeni=%.1f" % [t - 1.2, car.global_position.x, car.global_position.z, car.linear_velocity.length() * 3.6, rad_to_deg(atan2(-f.z, -f.x)), car.damage])
+	if t > 4.5:
 		get_tree().quit()
 
 
@@ -185,6 +208,9 @@ func _physics_process(delta: float) -> void:
 		return
 	if _lap_car != "":
 		_lap_test(t, car)
+		return
+	if _wall_angle >= 0.0:
+		_wall_test(t, car)
 		return
 	_press("plyn", (t > 1.0 and t < 10.0) or (t > 22.6 and t < 23.0))
 	_press("vlevo", t > 4.0 and t < 5.6)

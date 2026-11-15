@@ -104,6 +104,7 @@ func _build(is_player: bool, color: Color) -> void:
 					group.name = "Dil_" + key
 					node.get_parent().add_child(group)
 				if node.get_parent() == group.get_parent():
+					node.owner = null
 					node.get_parent().remove_child(node)
 					group.add_child(node)
 			if group:
@@ -164,6 +165,7 @@ func _setup_wheels(scene: Node, holder: Node3D, c: Callable) -> void:
 		if template == null:
 			push_error("Sablona kola nenalezena")
 			return
+		template.owner = null
 		template.get_parent().remove_child(template)
 		template.transform = Transform3D.IDENTITY
 		var disk_plus_x: bool = c.call("kolo_sablona_disk_k_plus_x", true)
@@ -223,10 +225,12 @@ func _setup_wheels(scene: Node, holder: Node3D, c: Callable) -> void:
 				fixed_xf[d] = xform_to(d, self)
 			for n in nodes:
 				var xf := xform_to(n, self)
+				n.owner = null
 				n.get_parent().remove_child(n)
 				wheel_spins[i].add_child(n)
 				n.transform = spin_xf.affine_inverse() * xf
 			for d in fixed:
+				d.owner = null
 				d.get_parent().remove_child(d)
 				pivot.add_child(d)
 				d.transform = Transform3D(Basis(), center).affine_inverse() * (fixed_xf[d] as Transform3D)

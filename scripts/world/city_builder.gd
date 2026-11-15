@@ -178,7 +178,38 @@ func _build_city_blocks() -> void:
 			_fill_block(holder, inner, center_dist)
 
 
+## Neviditelna zed (jen kolize) mezi dvema body - uzavira mezery mezi budovami,
+## aby se v nich auto pri otreni o fasadu nezaseklo.
+func invisible_wall(a: Vector3, b: Vector3, inward: Vector3) -> void:
+	var body := StaticBody3D.new()
+	body.name = "NeviditelnaZed"
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	var length := a.distance_to(b)
+	shape.size = Vector3(length, 8.0, 0.6)
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
+	var dir := (b - a).normalized()
+	body.transform = Transform3D(Basis(dir, Vector3.UP, dir.cross(Vector3.UP)), (a + b) * 0.5 + Vector3(0, 4.0, 0) + inward.normalized() * 0.27)
+
+
+## Jedna souvisla kolizni plocha kolem celeho bloku domu (o 3 cm pred fasadami).
+## Auto se tak pri otreni dotyka jen jedne hladke plochy a nezachyti se o spary mezi domy.
+func _block_collider(r: Rect2) -> void:
+	var body := StaticBody3D.new()
+	body.name = "KolizeBloku"
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(r.size.x + 0.06, 8.0, r.size.y + 0.06)
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
+	body.position = Vector3(r.get_center().x, CURB + 4.0, r.get_center().y)
+
+
 func _fill_block(holder: Node3D, inner: Rect2, center_dist: float) -> void:
+	_block_collider(inner)
 	# Rozdeleni bloku na 2-3 x 2 parcely
 	var nx := 2 + int(rng.randf() < 0.4)
 	var nz := 2
@@ -288,6 +319,13 @@ func _build_outer_ring() -> void:
 				_: lot = Rect2(-edge - SIDEWALK - d, along, d, w)
 			building(holder, lot, rng.randf_range(16.0, 55.0))
 			along += w + 2.0
+	# Neviditelne zdi podel rad budov na okraji (mezery mezi domy)
+	var fl := edge + SIDEWALK
+	invisible_wall(Vector3(-edge, 0, -fl), Vector3(edge, 0, -fl), Vector3(0, 0, -1))
+	invisible_wall(Vector3(-edge, 0, fl), Vector3(edge, 0, fl), Vector3(0, 0, 1))
+	invisible_wall(Vector3(-fl, 0, -edge), Vector3(-fl, 0, edge), Vector3(-1, 0, 0))
+	invisible_wall(Vector3(fl, 0, -edge), Vector3(fl, 0, LOT_RECT.position.y - 8.0), Vector3(1, 0, 0))
+	invisible_wall(Vector3(fl, 0, LOT_RECT.end.y + 8.0), Vector3(fl, 0, edge), Vector3(1, 0, 0))
 	# Vychod: budovy kolem parkoviste (nad a pod nim)
 	for zr in [[-edge, LOT_RECT.position.y - 8.0], [LOT_RECT.end.y + 8.0, edge]]:
 		static_box(Vector3(outer - edge, CURB, zr[1] - zr[0]), Transform3D(Basis(), Vector3((edge + outer) * 0.5, CURB * 0.5, (zr[0] + zr[1]) * 0.5)), walk_mat, holder)

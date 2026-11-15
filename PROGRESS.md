@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (3. kolo úprav – řízení, tachometr, den): HOTOVO, čeká na otestování hráčem.**
+**Fáze 1b (4. kolo – nové jádro řízení, okruh, zvuky, aktualizace jedním kliknutím): HOTOVO, čeká na otestování hráčem.**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -60,6 +60,31 @@
 - Pro vývoj den (F8 přepne na noc s neony).
 - Otázka Blender / jiný engine – zodpovězeno v chatu (Blender je na modely, Godot zůstává).
 
+## 4. kolo – „vylaď to jako velmi dobře hratelnou arkádu“ (hráč dal volnou ruku)
+- **Nové jádro řízení** (`scripts/car/car.gd`, část „Jizda v rovine“): žádné pneumatiky po kolech, ale arkádový model:
+  volant → cílová rychlost otáčení auta (omezená `ostrost_zataceni` / rychlost a nejmenším poloměrem),
+  boční síla drží auto ve směru jízdy do `prilnavost` (g); když se auto točí rychleji, než unese přilnavost,
+  vybočí zadkem nejvýš o `max_uhel_smyku` a otáčení se přibrzdí (krátký smyk, ne roztočení).
+  Drift: ruční brzda v zatáčce → menší přilnavost, volant řídí natočení, plyn drží rychlost, volant rovně = konec.
+  Boční síla působí pod těžištěm → karoserie se naklání na pružinách.
+- **Proč:** tři kola ladění hybridního modelu (síly pneumatik + asistenti) hráči nesedla („nezatáčí“).
+  Nový model má pár srozumitelných čísel a jde měřit.
+- **Měření řízení počítačovým jezdcem** (`scripts/car/ai_driver.gd`): jede po zaoblené stopě s rychlostním profilem,
+  volant ovládá jako klávesnice (jen vlevo/vpravo/nic). Výsledek (okruh 1080 m, 8 zatáček):
+  všechna 3 auta kolo ~40–41 s, odchylka od stopy ≤ 1,2 m, 0 nárazů, zatáčky v ~70 km/h, smyk do 12°.
+  Při přehnané rychlosti auto vyjede ven (nedotáčivě), neroztočí se. Jezdec poslouží ve fázi 4 jako soupeř.
+- **Okruh** (`scripts/world/circuit.gd`): trasa přes 8 křižovatek, svítící šipky, brána START/CÍL, čas kola v HUD,
+  klávesa T postaví auto na start.
+- **Lampy jdou porazit** (v rychlosti nad 25 km/h), hydranty odstrčit; menší tření o zdi (auto se o zeď otře a jede dál).
+- **Kamera:** dívá se ve směru jízdy (je vidět natočení auta v zatáčce a ve smyku), při brzdění se přiblíží,
+  při zrychlení a nitru zaostane, nevleze do budov.
+- **Zvuky** (`scripts/car/car_audio.gd`, `tools/generuj_zvuky.py`): vše syntetické – motor (R4 / V8, dvě vrstvy podle otáček),
+  kvílení pneumatik podle smyku, nitro, vítr, nárazy, škrábání, řazení, odfuk turba. Klávesa M = ztlumit.
+  Pozor: zvuk nešlo v cloudu poslechnout, jen změřit (hlasitost, frekvence) – čeká na ohlas hráče.
+- **Aktualizace bez stahování ZIPu:** `AKTUALIZOVAT.bat` (git fetch + reset, případně nainstaluje Git přes winget),
+  `HRAT.bat` spustí hru přímo bez editoru.
+- Varianty F7: ARKÁDA (výchozí), SPORT, DRIFT násobí hodnoty auta (`x_...` v auta.cfg); EVP = převzaté řízení.
+
 ## Co je hotovo
 - **Auta** (`scripts/car/car.gd`, `car_model.gd`): 3D modely .glb, nastavení modelů v `data/modely_aut.cfg`
   (kola, materiály, světla, díly pro demolici, opravy modelu). Lak s clearcoatem, brzdová světla, reflektory se stínem.
@@ -91,7 +116,6 @@
 
 ## Známé nedostatky / nápady na později
 - Silvia: model je „výstavní“, dveře a kapota se zavírají v kódu (`transformace`, `reset_deti` v modely_aut.cfg).
-- Zatím žádné zvuky (fáze 2).
 - Promáčkliny karoserie a odpadávání dílů během jízdy – fáze 2 (díly jsou už v modelech označené).
 - Skutečný motion blur (Compositor efekt) zvážit ve fázi 7.
 - Výkon na PC Monster ověřit (hodně světel + objemová mlha); případně snížit dosah lamp v `graphics.gd`.
@@ -102,6 +126,9 @@
 ## Vývojářské poznámky
 - Automatický test: `godot --path . -- --autotest [--shots=SLOZKA] [--rychle]`
 - Test řízení: `godot --headless --path . -- [--profil=arkada|sport|drift|gevp] --handlingtest=octavia`
+- Test okruhu s počítačovým jezdcem: `godot --headless --path . -- --lap=octavia --g=1.5` (`--analog` = plynulý volant, `LAPDEBUG=1` = podrobný výpis)
+- Zvuky znovu vygenerovat: `python3 tools/generuj_zvuky.py` (numpy, scipy)
+- Nahrávka se zvukem: `godot --path . --write-movie slozka/f.png --fixed-fps 20 -- --kvalita=0 --lap=mustang`
 - Noc místo dne: přidat `--noc`
 - Měření zrychlení: `godot --headless --path . -- --speedtest=octavia`
 - Prohlížeč modelu: `godot --path . res://scenes/dev/model_viewer.tscn -- --view=res://cesta.glb --out=/slozka/prefix`

@@ -15,6 +15,9 @@ var speed_blur := true
 
 
 func _ready() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--kvalita="):
+			quality = clampi(int(arg.substr(10)), 0, NAMES.size() - 1)
 	# Pocka, az se nacte scena, pak nastavi grafiku.
 	apply.call_deferred()
 
