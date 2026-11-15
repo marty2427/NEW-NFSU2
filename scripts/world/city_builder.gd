@@ -20,6 +20,8 @@ var _lamp_positions: Array[Transform3D] = []
 var _building_shader: Shader
 var signs: NeonSigns
 var ground_material: ShaderMaterial
+var _lamp_mm := {}
+var _lamp_meshes := {}
 
 
 func build() -> void:
@@ -504,16 +506,23 @@ func _build_street_lamps() -> void:
 		poles.append(Transform3D(xf.basis.scaled(Vector3(s, s, s)), xf.origin + Vector3(0, h * 0.5, 0)))
 		var heads_local := [Vector3(0, h, -1.9)] if not tall else [Vector3(0, h, -1.9), Vector3(0, h, 1.9)]
 		var is_warm := (i % 5) != 0
+		# Zaznam lampy: indexy v MultiMeshich a svetla (aby sla lampa porazit)
+		var rec := {"pole": poles.size() - 1, "arms": [], "heads": [], "glows": [], "lights": [], "xf": xf, "h": h,
+			"glow_mm": mm_glow_warm if is_warm else mm_glow_cool}
 		for hl in heads_local:
 			var arm_pos: Vector3 = xf * Vector3(0, h - 0.1, (hl as Vector3).z * 0.55)
 			arms.append(Transform3D(xf.basis, arm_pos))
+			rec.arms.append(arms.size() - 1)
 			var head_pos: Vector3 = xf * (hl as Vector3)
 			heads.append(Transform3D(xf.basis, head_pos))
+			rec.heads.append(heads.size() - 1)
 			var glow_xf := Transform3D(xf.basis, head_pos - Vector3(0, 0.08, 0))
 			if is_warm:
 				glows_w.append(glow_xf)
+				rec.glows.append(glows_w.size() - 1)
 			else:
 				glows_c.append(glow_xf)
+				rec.glows.append(glows_c.size() - 1)
 			var spot := SpotLight3D.new()
 			spot.light_color = warm if is_warm else cool
 			spot.light_energy = 26.0 if not tall else 34.0
@@ -529,7 +538,8 @@ func _build_street_lamps() -> void:
 			spot.rotation_degrees = Vector3(-90, 0, 0)
 			spot.add_to_group("street_lights")
 			lights.add_child(spot)
-		# Kolize sloupu
+			rec.lights.append(spot)
+		# Kolize sloupu (v male rychlosti sloup auto zastavi)
 		var body := StaticBody3D.new()
 		var cs := CollisionShape3D.new()
 		var shape := CylinderShape3D.new()
@@ -539,12 +549,95 @@ func _build_street_lamps() -> void:
 		body.add_child(cs)
 		lights.add_child(body)
 		body.position = xf.origin + Vector3(0, h * 0.5, 0)
+		rec["body"] = body
+		# Oblast kolem sloupu: rychle jedouci auto sloup porazi drive, nez do nej narazi
+		var area := Area3D.new()
+		var acs := CollisionShape3D.new()
+		var ashape := CylinderShape3D.new()
+		ashape.radius = 1.3
+		ashape.height = 2.0
+		acs.shape = ashape
+		area.add_child(acs)
+		area.monitorable = false
+		lights.add_child(area)
+		area.position = xf.origin + Vector3(0, 1.0, 0)
+		area.body_entered.connect(_on_lamp_hit.bind(rec, area))
 		i += 1
 	_fill_multimesh(mm_pole, poles)
 	_fill_multimesh(mm_arm, arms)
 	_fill_multimesh(mm_head, heads)
 	_fill_multimesh(mm_glow_warm, glows_w)
 	_fill_multimesh(mm_glow_cool, glows_c)
+	_lamp_mm = {"pole": mm_pole, "arm": mm_arm, "head": mm_head}
+	_lamp_meshes = {"pole": pole_mesh, "arm": arm_mesh, "head": head_mesh, "metal": metal}
+
+
+## Auto v rychlosti porazi lampu: sloup odleti jako fyzicky objekt, svetlo zhasne.
+func _on_lamp_hit(hit_body: Node3D, rec: Dictionary, area: Area3D) -> void:
+	var rb := hit_body as RigidBody3D
+	if rb == null or not rb.is_in_group("cars") or rec.get("down", false):
+		return
+	var v := rb.linear_velocity
+	if v.length() < 7.0:
+		return
+	rec["down"] = true
+	var zero := Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -50, 0))
+	(_lamp_mm.pole as MultiMeshInstance3D).multimesh.set_instance_transform(rec.pole, zero)
+	for idx in rec.arms:
+		(_lamp_mm.arm as MultiMeshInstance3D).multimesh.set_instance_transform(idx, zero)
+	for idx in rec.heads:
+		(_lamp_mm.head as MultiMeshInstance3D).multimesh.set_instance_transform(idx, zero)
+	for idx in rec.glows:
+		(rec.glow_mm as MultiMeshInstance3D).multimesh.set_instance_transform(idx, zero)
+	for l in rec.lights:
+		(l as Node).queue_free()
+	(rec.body as Node).queue_free()
+	area.queue_free()
+	# Padajici sloup
+	var xf: Transform3D = rec.xf
+	var h: float = rec.h
+	var pole := RigidBody3D.new()
+	pole.name = "PorazenaLampa"
+	pole.mass = 70.0
+	pole.add_to_group("debris")
+	var mi := MeshInstance3D.new()
+	mi.mesh = _lamp_meshes.pole
+	mi.material_override = _lamp_meshes.metal
+	mi.scale = Vector3.ONE * (h / 9.0)
+	pole.add_child(mi)
+	var head := MeshInstance3D.new()
+	head.mesh = _lamp_meshes.head
+	head.material_override = _lamp_meshes.metal
+	head.position = Vector3(0, h * 0.5, -1.9)
+	pole.add_child(head)
+	var arm := MeshInstance3D.new()
+	arm.mesh = _lamp_meshes.arm
+	arm.material_override = _lamp_meshes.metal
+	arm.position = Vector3(0, h * 0.5 - 0.1, -1.0)
+	pole.add_child(arm)
+	var cs := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = 0.15
+	shape.height = h
+	cs.shape = shape
+	pole.add_child(cs)
+	add_child.call_deferred(pole)
+	pole.transform = Transform3D(xf.basis, xf.origin + Vector3(0, h * 0.5 + 0.1, 0))
+	var dir := Vector3(v.x, 0, v.z).normalized()
+	pole.linear_velocity = dir * v.length() * 0.45 + Vector3.UP * 2.5
+	# Sloup se preklopi ve smeru jizdy auta
+	pole.angular_velocity = Vector3.UP.cross(dir) * clampf(v.length() * 0.12, 1.0, 4.0)
+	pole.add_collision_exception_with(rb)
+	get_tree().create_timer(1.2).timeout.connect(func():
+		if is_instance_valid(pole) and is_instance_valid(rb):
+			pole.remove_collision_exception_with(rb))
+	# Auto trochu zpomali, zajiskri to
+	rb.apply_central_impulse(-v * rb.mass * 0.05)
+	FX.spawn_sparks(self, xf.origin + Vector3(0, 0.6, 0), -dir + Vector3.UP, 50)
+	for cam in get_tree().get_nodes_in_group("camera_shake"):
+		cam.call("add_shake", 0.25)
+	if rb.has_method("apply_damage"):
+		rb.call("apply_damage", 0.8)
 
 
 func _multimesh(mesh: Mesh, mat: Material) -> MultiMeshInstance3D:
@@ -578,4 +671,4 @@ func _build_street_props() -> void:
 				place_prop("metal_trash_can", Vector3(line + ROAD_HALF + 2.0, CURB, t), rng.randf() * TAU, true, 20.0)
 			if rng.randf() < 0.4:
 				var t2 := rng.randf_range(a, b)
-				place_prop("fire_hydrant", Vector3(t2, CURB, line - ROAD_HALF - 1.2), 0.0, false)
+				place_prop("fire_hydrant", Vector3(t2, CURB, line - ROAD_HALF - 1.2), 0.0, true, 45.0)

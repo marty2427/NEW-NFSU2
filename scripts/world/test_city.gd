@@ -8,6 +8,7 @@ var car: RigidBody3D   # Car nebo GevpCar (podle varianty rizeni F7)
 var camera: ChaseCamera
 var hud: HUD
 var city: CityBuilder
+var circuit: Circuit
 var world_env: WorldEnvironment
 var sun: DirectionalLight3D
 var _sky_day: Sky
@@ -20,6 +21,9 @@ func _ready() -> void:
 	city.name = "Mapa"
 	add_child(city)
 	city.build()
+	circuit = Circuit.new()
+	circuit.name = "Okruh"
+	add_child(circuit)
 	_spawn_player()
 	_apply_daylight(Hra.daylight)
 	Hra.daylight_changed.connect(_apply_daylight)
@@ -32,7 +36,7 @@ func _ready() -> void:
 		if arg == "--noc":
 			Hra.toggle_daylight()
 	for arg in OS.get_cmdline_user_args():
-		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest="):
+		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
 
 
@@ -71,6 +75,7 @@ func spawn_car(id: String, xform: Transform3D) -> void:
 	car.exploded.connect(_on_car_exploded)
 	camera.target = car
 	hud.car = car
+	circuit.car = car
 
 
 func _respawn_here(id: String) -> void:

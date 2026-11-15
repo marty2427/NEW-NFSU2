@@ -19,23 +19,25 @@ var max_otacky := 7000.0
 var volnobezne_otacky := 900.0
 var sila_brzd := 15000.0
 var sila_rucni_brzdy := 5000.0
-var max_natoceni_kol := 38.0
+var ostrost_zataceni := 30.0
+var ostrost_ve_vysoke_rychlosti := 0.8
 var rychlost_volantu := 5.0
-var pomoc_zataceni := 1.15
-var stabilita := 1.0
-var rychlost_otaceni := 1.0
+var odezva_rizeni := 9.0
+var max_otaceni := 2.2
+var max_natoceni_kol := 38.0
 var natoceni_kol_vizual := 1.0
-var drift_vstup := 0.25
+var prilnavost := 2.0
 var mokra_silnice := 0.95
-var prilnavost_predni := 1.55
-var prilnavost_zadni := 1.65
-var uhel_max_prilnavosti := 9.0
-var prilnavost_ve_smyku := 0.8
-var prilnavost_rucni_brzda := 0.3
-var prilnavost_v_driftu := 0.55
-var otaceni_v_driftu := 2.0
+var max_uhel_smyku := 13.0
+var smyk_plynem := 0.0
+var tuhost_prilnavosti := 10.0
+var naklon_karoserie := 0.22
+var drift_vstup := 0.12
+var prilnavost_rucni_brzda := 0.35
+var prilnavost_v_driftu := 0.6
+var otaceni_v_driftu := 1.7
 var pomoc_driftu := 1.0
-var max_uhel_driftu := 55.0
+var max_uhel_driftu := 45.0
 var propad_podvozku := 0.12
 var tlumeni := 0.38
 var zdvih_pruziny := 0.3
@@ -81,10 +83,9 @@ static func list_cars() -> PackedStringArray:
 
 func _read_section(cfg: ConfigFile, section: String) -> void:
 	for key in cfg.get_section_keys(section):
-		if key == "nasobek_prilnavosti":
-			var k := float(cfg.get_value(section, key))
-			prilnavost_predni *= k
-			prilnavost_zadni *= k
+		# "x_nazev" = nasobek hodnoty (pouzivaji varianty rizeni)
+		if key.begins_with("x_") and key.substr(2) in self:
+			set(key.substr(2), float(get(key.substr(2))) * float(cfg.get_value(section, key)))
 			continue
 		if not key in self:
 			push_warning("Neznama hodnota '%s' v sekci [%s] souboru auta.cfg" % [key, section])
