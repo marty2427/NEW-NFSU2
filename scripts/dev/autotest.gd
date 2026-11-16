@@ -107,6 +107,8 @@ func _lap_test(t: float, car) -> void:
 	if _ai.laps >= _lap_count or t > _lap_limit:
 		print("[LAP] %s g=%.2f %s: %.1f s | odchylka od stopy max %.1f m | narazy %d (tvrde %d) | poskozeni %.0f | v min %.0f max %.0f | smyk max %.0f st" % [
 			_lap_car, _lap_g, ("kolo %d" % _lap_count) if _ai.laps >= _lap_count else "NEDOJEL (i %d z %d)" % [_ai.index, _ai.line.size()], t - _lap_start, _ai.off_line_max, _impacts, _hard_impacts, car.damage, _min_v, _max_v, _max_slip])
+		var city = arena.city
+		print("[MESTO] nacitani okoli: %d dlazdic, prumer %.1f ms, nejdele %.1f ms, aktivnich %d" % [city.activate_count, city.activate_ms_sum / maxf(city.activate_count, 1), city.activate_ms_max, city._active.size()])
 		get_tree().quit()
 
 

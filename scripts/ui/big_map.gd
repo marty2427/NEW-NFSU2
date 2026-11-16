@@ -19,15 +19,15 @@ var _font: Font
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_font = load("res://assets/fonts/Oxanium.ttf")
 	_layer = Control.new()
-	_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_layer.draw.connect(_draw_map)
 	add_child(_layer)
 	_marker = Control.new()
-	_marker.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_marker.draw.connect(_draw_marker)
 	add_child(_marker)

@@ -20,6 +20,8 @@ func _ready() -> void:
 			_only = arg.substr(10).split(",")
 	DirAccess.make_dir_recursive_absolute(_dir)
 	var arena := get_parent()
+	if OS.get_cmdline_user_args().has("--mapa"):
+		arena.hud._bigmap.toggle()
 	var st: Transform3D = arena.circuit.grid_transform()
 	var lot := Vector3.ZERO
 	for l: Dictionary in arena.city.map.lots:

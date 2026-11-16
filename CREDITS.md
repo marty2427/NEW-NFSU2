@@ -46,6 +46,10 @@ Google Fonts (https://fonts.google.com), plný text licencí v `assets/fonts/LIC
 - Oxanium – Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium), SIL OFL 1.1
 - HUD používá Russo One; tachometr a minimapa Oxanium; neonové cedule ostatní uvedená písma.
 
+## Plán města (`data/mesto.json`) – vlastní práce projektu
+- Vygenerováno skriptem `tools/generuj_mesto.py`. Uspořádání je jen volně inspirované skutečnými městy
+  (řeka s nábřežími, okružní třída, paprskové bulváry, pravidelná mřížka, městská dálnice); žádná mapová data nejsou převzata.
+
 ## Názvy a značky
 - Hra je soukromý projekt, nebude se šířit. Skutečná auta (Škoda, Nissan, Ford) jsou použita
   se souhlasem vlastníka projektu jen pro osobní použití. Názvy podniků na neonových cedulích jsou vymyšlené.

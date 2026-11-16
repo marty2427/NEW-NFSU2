@@ -88,7 +88,7 @@ func _ready() -> void:
 	# --- Vpravo dole: otackomer ---
 	_tacho = Tachometer.new()
 	root.add_child(_tacho)
-	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -470, -450, -10, -10)
+	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -506, -466, -6, -6)
 	_tacho.car = car
 
 	# --- Vlevo dole: minimapa ---

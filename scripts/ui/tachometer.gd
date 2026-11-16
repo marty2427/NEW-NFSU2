@@ -1,11 +1,11 @@
 class_name Tachometer
 extends Control
-## Moderni digitalni pristrojovka (kreslena v kodu): tenky svitici oblouk otacek,
-## rovne ciste cislice, uprostred velka rychlost, dole rychlostni stupen,
-## vpravo modry sloupec N2O. Zadne sikme pismo.
+## Pristrojovka ve stylu novejsich zavodnich her (kreslena v kodu): bez tezkeho cifernik-kotouce,
+## jen tenky oblouk s drobnymi dilky, svitici "ocas" za rucickou, velka rychlost uprostred,
+## rychlostni stupen v sikmem ramecku a nitro jako rada sikmych dilku. Cislice jsou rovne.
 
-const START_DEG := 135.0       # 0 ot./min vlevo dole
-const SWEEP_DEG := 270.0       # po smeru hodinovych rucicek az vpravo dolu
+const START_DEG := 142.0       # 0 ot./min vlevo dole
+const SWEEP_DEG := 256.0       # po smeru hodinovych rucicek az vpravo dolu
 const C_TEXT := Color(0.94, 0.96, 1.0)
 const C_ACCENT := Color(0.15, 0.85, 1.0)
 const C_HOT := Color(1.0, 0.25, 0.55)
@@ -25,7 +25,7 @@ var _n2o_glow := 0.0
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(460, 440)
+	custom_minimum_size = Vector2(500, 460)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var base: Font = load("res://assets/fonts/Oxanium.ttf")
 	font_bold = FontVariation.new()
@@ -91,12 +91,25 @@ func _rounded_rect(rect: Rect2, radius: float, col: Color, filled := true, width
 	draw_style_box(sb, rect)
 
 
+## Sikmy obdelnik (rovnobeznik): stred, rozmer, sklon v pixelech.
+func _slanted(center: Vector2, sz: Vector2, slant: float, col: Color, filled := true, width := 2.0) -> void:
+	var h := sz * 0.5
+	var pts := PackedVector2Array([
+		center + Vector2(-h.x + slant * 0.5, -h.y), center + Vector2(h.x + slant * 0.5, -h.y),
+		center + Vector2(h.x - slant * 0.5, h.y), center + Vector2(-h.x - slant * 0.5, h.y)])
+	if filled:
+		draw_colored_polygon(pts, col)
+	else:
+		pts.append(pts[0])
+		draw_polyline(pts, col, width, true)
+
+
 func _draw() -> void:
 	if car == null or not is_instance_valid(car) or car.get("t") == null:
 		return
 	var redline: float = car.t.max_otacky
 	var max_rpm := ceilf(redline / 1000.0 + 0.4) * 1000.0
-	var frac := _rpm / max_rpm
+	var frac := clampf(_rpm / max_rpm, 0.0, 1.0)
 	var red_frac := redline / max_rpm
 	var nitro: float = car.nitro
 	var nitro_on: bool = car.nitro_active
@@ -106,78 +119,96 @@ func _draw() -> void:
 	var near_red := frac >= red_frac * 0.97
 	var blink := fmod(Time.get_ticks_msec() / 80.0, 2.0) < 1.0
 
-	var c := Vector2(size.x - 232.0, size.y - 218.0)
-	var r := 164.0
+	var c := Vector2(size.x - 250.0, size.y - 250.0)
+	var r := 178.0
 
-	# --- Podklad: tmave sklo, jemny okraj ---
-	draw_circle(c, r + 20.0, Color(0.025, 0.03, 0.055, 0.66))
-	draw_arc(c, r + 20.0, 0.0, TAU, 128, Color(1, 1, 1, 0.10), 1.5, true)
-	draw_circle(c, r - 62.0, Color(0, 0, 0, 0.25))
-	draw_arc(c, r - 62.0, 0.0, TAU, 96, Color(1, 1, 1, 0.07), 1.5, true)
+	# --- Jemne ztmaveni pozadi (jen kvuli citelnosti, zadny kotouc) ---
+	for i in 9:
+		draw_circle(c, r + 34.0 - i * 20.0, Color(0.0, 0.01, 0.03, 0.085))
 
-	# --- Draha oblouku otacek + cervene pole ---
-	draw_arc(c, r, _ang(0.0), _ang(red_frac), 96, Color(1, 1, 1, 0.11), 14.0, true)
-	draw_arc(c, r, _ang(red_frac), _ang(1.0), 24, Color(C_RED, 0.45), 14.0, true)
-
-	# --- Svitici oblouk otacek ---
-	var col := C_ACCENT.lerp(C_HOT, smoothstep(0.6, 0.97, frac / red_frac))
+	var col := C_ACCENT.lerp(C_HOT, smoothstep(0.62, 0.97, frac / red_frac))
 	if near_red:
 		col = C_RED if blink else Color.WHITE
+
+	# --- Svitici "ocas" za rucickou ---
+	var a_now := _ang(frac)
+	var slices := 26
+	var step := deg_to_rad(1.9)
+	for i in slices:
+		var a1 := a_now - i * step
+		var a0 := maxf(a1 - step, _ang(0.0))
+		if a1 <= _ang(0.0):
+			break
+		var k := 1.0 - float(i) / slices
+		var d0 := _dir(a0)
+		var d1 := _dir(a1)
+		draw_colored_polygon(PackedVector2Array([c + d0 * (r - 34.0), c + d1 * (r - 34.0), c + d1 * (r - 3.0), c + d0 * (r - 3.0)]), Color(col, 0.42 * k * k))
+
+	# --- Tenky oblouk: zaklad, cervene pole, rozsvicena cast ---
+	draw_arc(c, r, _ang(0.0), _ang(red_frac), 96, Color(1, 1, 1, 0.3), 2.0, true)
+	draw_arc(c, r, _ang(red_frac), _ang(1.0), 24, Color(C_RED, 0.95), 4.0, true)
 	if frac > 0.003:
-		draw_arc(c, r, _ang(0.0), _ang(frac), 96, Color(col, 0.16), 26.0, true)
-		draw_arc(c, r, _ang(0.0), _ang(frac), 96, col, 14.0, true)
+		draw_arc(c, r, _ang(0.0), a_now, 96, Color(col, 0.22), 10.0, true)
+		draw_arc(c, r, _ang(0.0), a_now, 96, col, 3.5, true)
 
-	# --- Ryski a rovne cislice ---
+	# --- Dilky po 250 ot./min a rovne cislice ---
 	var n := int(max_rpm / 1000.0)
-	for i in n * 2 + 1:
-		var f := float(i) / float(n * 2)
+	for i in n * 4 + 1:
+		var f := float(i) / float(n * 4)
 		var d := _dir(_ang(f))
-		var major := i % 2 == 0
+		var major := i % 4 == 0
 		var red := f > red_frac - 0.001
+		var lit := f <= frac + 0.001
 		var tcol := C_RED if red else C_TEXT
+		var alpha := (1.0 if lit else 0.42) if not red else 0.95
 		if major:
-			draw_line(c + d * (r - 24.0), c + d * (r - 11.0), Color(tcol, 0.95), 2.5, true)
-			_centered(c + d * (r - 44.0), str(i / 2), 27, Color(tcol, 0.95), font_bold)
+			draw_line(c + d * (r - 20.0), c + d * (r - 4.0), Color(tcol, alpha), 3.0, true)
+			var near_now := absf(_rpm / 1000.0 - float(i / 4)) < 0.5
+			_centered(c + d * (r - 41.0), str(i / 4), 29 if near_now else 25, Color(tcol, 1.0 if near_now or red else 0.7), font_bold)
 		else:
-			draw_line(c + d * (r - 17.0), c + d * (r - 11.0), Color(tcol, 0.45), 1.5, true)
+			draw_line(c + d * (r - 11.0), c + d * (r - 4.0), Color(tcol, alpha * 0.8), 1.6, true)
 
-	# --- Rucicka: tenka svetla cara od stredoveho pole k oblouku ---
-	var nd := _dir(_ang(frac))
+	# --- Rucicka: uzky klin ---
+	var nd := _dir(a_now)
 	var perp := Vector2(-nd.y, nd.x)
-	var n0 := c + nd * (r - 60.0)
-	var n1 := c + nd * (r + 9.0)
-	draw_line(n0, n1, Color(col, 0.25), 9.0, true)
-	draw_colored_polygon(PackedVector2Array([n0 + perp * 2.6, n1 + perp * 1.0, n1 - perp * 1.0, n0 - perp * 2.6]), Color.WHITE)
+	var n0 := c + nd * (r - 52.0)
+	var n1 := c + nd * (r + 10.0)
+	draw_line(n0, n1, Color(col, 0.3), 10.0, true)
+	draw_colored_polygon(PackedVector2Array([n0 + perp * 1.2, n1 + perp * 3.2, n1 - perp * 3.2, n0 - perp * 1.2]), Color.WHITE)
 
-	# --- Stred: rychlost ---
-	_digits(c + Vector2(0, -12), "%d" % int(round(_speed)), 84, Color.WHITE, font_bold)
-	_centered(c + Vector2(0, 40), "K M / H", 17, Color(C_TEXT, 0.7), font_medium, false)
-	_centered(c + Vector2(0, -70), "RPM  ×1000", 13, Color(C_TEXT, 0.5), font_medium, false)
+	# --- Stred: velka rychlost ---
+	_digits(c + Vector2(0, -8), "%d" % int(round(_speed)), 104, Color.WHITE, font_bold)
+	_centered(c + Vector2(0, 56), "K M / H", 18, Color(C_TEXT, 0.72), font_medium, false)
+	_centered(c + Vector2(0, -78), "×1000  RPM", 13, Color(C_TEXT, 0.5), font_medium, false)
 
-	# --- Dole: rychlostni stupen (pri pretaceni sviti zelene = prerad) ---
+	# --- Rychlostni stupen v sikmem ramecku (zelene = prerad) ---
 	var shift := cur_gear > 0 and cur_gear < gear_max and _rpm > redline * 0.9
-	var box := Rect2(c + Vector2(-34, r - 62.0), Vector2(68, 64))
+	var gpos := c + Vector2(0, r - 52.0)
+	var gsize := Vector2(74, 58)
 	if shift:
-		_rounded_rect(box, 12.0, Color(C_GREEN, 0.95))
-		_centered(box.get_center() + Vector2(0, 1), gear_text, 46, Color(0.02, 0.08, 0.04), font_bold, false)
+		_slanted(gpos, gsize + Vector2(10, 10), 14.0, Color(C_GREEN, 0.25))
+		_slanted(gpos, gsize, 14.0, Color(C_GREEN, 0.96))
+		_centered(gpos + Vector2(0, 1), gear_text, 46, Color(0.02, 0.08, 0.04), font_bold, false)
 	else:
-		_rounded_rect(box, 12.0, Color(0.03, 0.04, 0.07, 0.9))
-		_rounded_rect(box, 12.0, Color(C_ACCENT.lerp(Color.WHITE, _gear_flash), 0.75 + 0.25 * _gear_flash), false, 2.0)
-		_centered(box.get_center() + Vector2(0, 1), gear_text, 46, Color.WHITE, font_bold)
+		_slanted(gpos, gsize, 14.0, Color(0.02, 0.03, 0.06, 0.78))
+		_slanted(gpos, gsize, 14.0, Color(C_ACCENT.lerp(Color.WHITE, _gear_flash), 0.85), false, 2.2)
+		_centered(gpos + Vector2(0, 1), gear_text, 46, Color.WHITE, font_bold)
+	_centered(gpos + Vector2(-66, 0), "GEAR", 13, Color(C_TEXT, 0.55), font_medium, false)
 
-	# --- Vpravo: N2O jako segmentovany oblouk (plni se odspodu, dobiji se i driftem) ---
-	var n_from := deg_to_rad(38.0)
-	var n_to := deg_to_rad(-62.0)
-	var segs := 16
+	# --- Nitro: rada sikmych dilku pod pristrojem (dobiji se i driftem) ---
+	var segs := 14
+	var seg_w := 19.0
+	var gap_w := 5.0
+	var total_w := segs * seg_w + (segs - 1) * gap_w
+	var npos := c + Vector2(-total_w * 0.5 + 20.0, r + 22.0)
+	var ncol := C_N2O.lerp(Color(0.85, 0.97, 1.0), _n2o_glow)
 	for i in segs:
-		var a0 := lerpf(n_from, n_to, float(i) / segs) - 0.012
-		var a1 := lerpf(n_from, n_to, float(i + 1) / segs) + 0.012
+		var center := npos + Vector2(i * (seg_w + gap_w) + seg_w * 0.5, 0)
 		var filled := (float(i) + 0.5) / segs <= nitro
 		if filled:
-			var ncol := C_N2O.lerp(Color(0.8, 0.95, 1.0), _n2o_glow)
-			draw_arc(c, r + 36.0, a1, a0, 6, Color(ncol, 0.22), 18.0, true)
-			draw_arc(c, r + 36.0, a1, a0, 6, ncol, 9.0, true)
+			if nitro_on:
+				_slanted(center, Vector2(seg_w + 6, 20), 7.0, Color(ncol, 0.25))
+			_slanted(center, Vector2(seg_w, 13), 7.0, ncol)
 		else:
-			draw_arc(c, r + 36.0, a1, a0, 6, Color(1, 1, 1, 0.13), 9.0, true)
-	var lab := c + _dir(deg_to_rad(47.0)) * (r + 38.0)
-	_centered(lab, "N2O", 19, Color.WHITE if nitro_on else Color(0.55, 0.78, 1.0), font_bold)
+			_slanted(center, Vector2(seg_w, 13), 7.0, Color(1, 1, 1, 0.16))
+	_centered(npos + Vector2(-34, 0), "N2O", 18, Color.WHITE if nitro_on else Color(0.6, 0.82, 1.0), font_bold)

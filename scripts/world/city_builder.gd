@@ -33,6 +33,9 @@ var ground_material: ShaderMaterial      # material silnic (mokro se meni podle 
 var building_count := 0
 var lamp_count := 0
 var sign_count := 0
+var activate_ms_max := 0.0               # mereni: jak dlouho trva nacteni jedne dlazdice detailu
+var activate_ms_sum := 0.0
+var activate_count := 0
 var _mats := {}
 var _facade_mats := {}
 var _grid := {}                           # prostorova mrizka obrysu (domy, koridory ulic)
@@ -41,6 +44,7 @@ var _chunks := {}                         # Vector2i -> zaznam dlazdice (domy, l
 var _tools := {}                          # "druh:dlazdice" -> SurfaceTool (sit se sklada po dlazdicich)
 var _active := {}                         # Vector2i -> Node3D s nactenymi detaily
 var _queue: Array[Vector2i] = []
+var _jobs: Array = []                     # rozpracovane nacitani: [koren dlazdice, druh, data]
 var _lamp_meshes := {}
 var _unit_box: BoxMesh
 var _rim_material: ShaderMaterial
@@ -446,7 +450,7 @@ func _commit_meshes() -> void:
 		"plot": pbr("concrete_floor_worn_001", 0.25, Color(0.62, 0.62, 0.66)),
 		"zabradli": pbr("concrete_floor_worn_001", 0.4, Color(0.75, 0.74, 0.7)),
 		"bariera": pbr("concrete_tile_facade", 0.2, Color(0.82, 0.84, 0.9)),
-		"pruh": simple(Color(1.0, 0.55, 0.12), 0.0, 0.4, 3.5),
+		"pruh": simple(Color(1.0, 0.55, 0.12), 0.0, 0.4, 2.0),
 	}
 	for key: String in _tools:
 		var kind := key.get_slice(":", 0)
@@ -959,11 +963,19 @@ func _process(delta: float) -> void:
 	if _scan_timer <= 0.0:
 		_scan_timer = 0.25
 		_scan_chunks()
-	# Kazdy snimek nejvys jedna dlazdice, aby hra necukala
-	if not _queue.is_empty():
-		var key: Vector2i = _queue.pop_front()
-		if _chunks.has(key) and not _active.has(key):
-			_activate(key)
+	# Nacitani po malych kouscich (nejvys ~2,5 ms za snimek), aby hra necukala
+	var t0 := Time.get_ticks_usec()
+	while Time.get_ticks_usec() - t0 < 2500:
+		if _jobs.is_empty():
+			if _queue.is_empty():
+				break
+			var key: Vector2i = _queue.pop_front()
+			if _chunks.has(key) and not _active.has(key):
+				_begin_chunk(key)
+			continue
+		_run_job(_jobs.pop_front())
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	activate_ms_max = maxf(activate_ms_max, ms)
 
 
 func _chunk_distance(key: Vector2i, p: Vector2) -> float:
@@ -1005,32 +1017,62 @@ func load_around(pos: Vector3) -> void:
 				_activate(key)
 
 
-func _activate(key: Vector2i) -> void:
+## Zalozi dlazdici detailu a naplanuje jeji naplneni po kouscich.
+func _begin_chunk(key: Vector2i) -> void:
 	var ch: Dictionary = _chunks[key]
 	var root := Node3D.new()
 	root.name = "Okoli_%d_%d" % [key.x, key.y]
 	add_child(root)
 	_active[key] = root
-	_spawn_lamps(root, ch.lamps)
-	# Cedule
+	activate_count += 1
+	var lamps: Array = ch.lamps
+	for i in range(0, lamps.size(), 6):
+		_jobs.append([root, "lamps", lamps.slice(i, i + 6)])
 	if not (ch.signs as Array).is_empty():
 		var ns := NeonSigns.new()
 		ns.rng.seed = hash(key)
 		root.add_child(ns)
-		for s: Array in ch.signs:
-			match s[0]:
-				"shop":
-					ns.shop_sign(s[1], s[2], s[3])
-				"blade":
-					ns.blade_sign(s[1], s[2])
-				"billboard":
-					ns.billboard(s[1], s[2])
-				"big":
-					ns.big_text(s[1], s[2], s[3], s[4], s[5], s[6], s[7])
-		ns.set_view_distance(360.0)
-	# Drobnosti
+		for sdef: Array in ch.signs:
+			_jobs.append([root, "sign", ns, sdef])
+		_jobs.append([root, "signs_done", ns])
 	for pr: Array in ch.props:
-		place_prop(pr[0], pr[1], pr[2], pr[3], maxf(pr[4], 1.0), root)
+		_jobs.append([root, "prop", pr])
+
+
+func _run_job(job: Array) -> void:
+	var root: Node3D = job[0]
+	if not is_instance_valid(root) or root.is_queued_for_deletion():
+		return
+	match job[1]:
+		"lamps":
+			_spawn_lamps(root, job[2])
+		"sign":
+			_make_sign(job[2], job[3])
+		"signs_done":
+			(job[2] as NeonSigns).set_view_distance(360.0)
+		"prop":
+			var pr: Array = job[2]
+			place_prop(pr[0], pr[1], pr[2], pr[3], maxf(pr[4], 1.0), root)
+
+
+func _make_sign(ns: NeonSigns, sdef: Array) -> void:
+	match sdef[0]:
+		"shop":
+			ns.shop_sign(sdef[1], sdef[2], sdef[3])
+		"blade":
+			ns.blade_sign(sdef[1], sdef[2])
+		"billboard":
+			ns.billboard(sdef[1], sdef[2])
+		"big":
+			ns.big_text(sdef[1], sdef[2], sdef[3], sdef[4], sdef[5], sdef[6], sdef[7])
+
+
+## Nacte dlazdici celou najednou (pri startu a po presunu auta).
+func _activate(key: Vector2i) -> void:
+	var before := _jobs.size()
+	_begin_chunk(key)
+	while _jobs.size() > before:
+		_run_job(_jobs.pop_at(before))
 
 
 func _spawn_lamps(root: Node3D, lamps: Array) -> void:
