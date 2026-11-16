@@ -8,13 +8,23 @@ var car: Node:  # Car nebo GevpCar
 		car = value
 		if _tacho:
 			_tacho.car = value
+		if _minimap:
+			_minimap.car = value
 
 var circuit: Circuit:
 	set(value):
 		circuit = value
 		if circuit:
 			circuit.lap_finished.connect(_on_lap_finished)
+		if _minimap:
+			_minimap.circuit = value
 
+var city_map: CityMap:
+	set(value):
+		city_map = value
+		if _minimap:
+			_minimap.city_map = value
+var _minimap: Minimap
 var _lap_label: Label
 var _lap_flash := 0.0
 var _tacho: Tachometer
@@ -71,8 +81,16 @@ func _ready() -> void:
 	# --- Vpravo dole: otackomer ---
 	_tacho = Tachometer.new()
 	root.add_child(_tacho)
-	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -530, -510, -10, -10)
+	_place(_tacho, Control.PRESET_BOTTOM_RIGHT, -470, -450, -10, -10)
 	_tacho.car = car
+
+	# --- Vlevo dole: minimapa ---
+	_minimap = Minimap.new()
+	root.add_child(_minimap)
+	_place(_minimap, Control.PRESET_BOTTOM_LEFT, 18, -242, 242, -18)
+	_minimap.car = car
+	_minimap.circuit = circuit
+	_minimap.city_map = city_map
 
 	# --- Stred: zpravy ---
 	_message = _label(root, 60, Color(1, 0.9, 0.4))
@@ -95,7 +113,7 @@ func _ready() -> void:
 
 	# --- Vlevo dole: ovladani ---
 	_help = _label(root, 16, Color(0.8, 0.83, 0.95, 0.8))
-	_place(_help, Control.PRESET_BOTTOM_LEFT, 28, -210, 760, -20)
+	_place(_help, Control.PRESET_BOTTOM_LEFT, 262, -210, 1000, -20)
 	_help.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_help.text = "\n".join([
 		"W/S nebo šipky ... plyn / brzda / couvání      A/D ... zatáčení",

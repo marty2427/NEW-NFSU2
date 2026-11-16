@@ -1,42 +1,54 @@
 class_name CityBuilder
 extends Node3D
-## Generator testovaci mapy: mestska ctvrt s mrizkou ulic a velke parkoviste.
-## Vse se stavi v kodu z textur a modelu v assets/.
+## Stavi mesto z planu CityMap: ulice s nepravidelnymi uhly a oblouky, krizovatky,
+## obrubniky, domy podel ulic, zdi (kolize), lampy, neonove cedule a treninkovou plochu.
+## Vse je v rovine y = 0 a stavi se v kodu z textur a modelu v assets/.
 
-const GRID := 90.0          # vzdalenost os ulic
-const ROAD_HALF := 8.0      # polovina sirky vozovky
-const SIDEWALK := 4.5       # sirka chodniku
-const CURB := 0.15          # vyska obrubniku
-const LINES := [-180.0, -90.0, 0.0, 90.0, 180.0]
-const LOT_RECT := Rect2(196.0, -110.0, 210.0, 220.0)   # parkoviste (x, z, sirka, hloubka)
-
+const CURB := 0.12
+const WALL_HEIGHT := 10.0
 const NEON := [Color(1.0, 0.15, 0.75), Color(0.1, 0.85, 1.0), Color(1.0, 0.5, 0.1),
 	Color(0.6, 0.25, 1.0), Color(0.2, 1.0, 0.45), Color(1.0, 0.2, 0.2)]
 const FACADES := ["concrete_tile_facade", "exterior_wall_cladding", "red_brick"]
 
+var map: CityMap
 var rng := RandomNumberGenerator.new()
-var _mats := {}
-var _lamp_positions: Array[Transform3D] = []
-var _building_shader: Shader
 var signs: NeonSigns
-var ground_material: ShaderMaterial
+var ground_material: ShaderMaterial      # material silnic (mokro se meni podle dne/noci)
+var building_count := 0
+var _mats := {}
+var _facade_mats := {}
+var _lamp_positions: Array[Transform3D] = []
 var _lamp_mm := {}
 var _lamp_meshes := {}
+var _grid := {}                           # prostorova mrizka obrysu (domy, koridory ulic)
+var _node_ends := {}                      # "krizovatka:ulice" -> [levy roh, pravy roh] konce vozovky
 
 
 func build() -> void:
 	rng.seed = 2427
-	_building_shader = load("res://shaders/building.gdshader")
+	map = CityMap.new()
 	signs = NeonSigns.new()
 	signs.name = "NeonoveCedule"
 	signs.rng.seed = 99
 	add_child(signs)
 	_build_ground()
-	_build_city_blocks()
-	_build_outer_ring()
-	_build_parking_lot()
+	_build_roads()
+	_build_walls()
+	_build_buildings()
+	_build_lot()
+	_collect_street_lamps()
 	_build_street_lamps()
 	_build_street_props()
+	signs.set_view_distance(320.0)
+	if OS.get_cmdline_user_args().has("--statistika"):
+		print("[MESTO] domu %d, lamp %d, cedul %d" % [building_count, _lamp_positions.size(), signs.get_child_count()])
+
+
+## Ve dne okna a vylohy sviti jen slabe, v noci naplno.
+func set_daylight(day: bool) -> void:
+	for mat: ShaderMaterial in _facade_mats.values():
+		mat.set_shader_parameter("window_energy", 0.3 if day else 1.3)
+		mat.set_shader_parameter("shop_energy", 0.45 if day else 0.9)
 
 
 # ---------------------------------------------------------------------
@@ -124,330 +136,6 @@ func noise_texture(freq: float, size: int, seed_value: int) -> NoiseTexture2D:
 	return tex
 
 
-# ---------------------------------------------------------------------
-#  Zem (asfalt se znacenim)
-# ---------------------------------------------------------------------
-
-func _build_ground() -> void:
-	var body := StaticBody3D.new()
-	body.name = "Zem"
-	add_child(body)
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(6000, 2, 6000)
-	cs.shape = shape
-	cs.position = Vector3(0, -1, 0)
-	body.add_child(cs)
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/city_ground.gdshader")
-	mat.set_shader_parameter("asphalt_albedo", load("res://assets/textures/asphalt_02/asphalt_02_diff.jpg"))
-	mat.set_shader_parameter("asphalt_normal", load("res://assets/textures/asphalt_02/asphalt_02_nor.jpg"))
-	mat.set_shader_parameter("asphalt_rough", load("res://assets/textures/asphalt_02/asphalt_02_rough.jpg"))
-	mat.set_shader_parameter("puddle_noise", noise_texture(0.02, 512, 7))
-	mat.set_shader_parameter("grid", GRID)
-	mat.set_shader_parameter("road_half", ROAD_HALF)
-	mat.set_shader_parameter("city_rect", Vector4(LINES[0], LINES[0], LINES[-1], LINES[-1]))
-	mat.set_shader_parameter("lot_rect", Vector4(LOT_RECT.position.x, LOT_RECT.position.y, LOT_RECT.end.x, LOT_RECT.end.y))
-	ground_material = mat
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(6000, 6000)
-	var mi := mesh_at(plane, mat, Vector3.ZERO, body)
-	mi.name = "Asfalt"
-
-
-# ---------------------------------------------------------------------
-#  Mestske bloky
-# ---------------------------------------------------------------------
-
-func _build_city_blocks() -> void:
-	var holder := Node3D.new()
-	holder.name = "Mesto"
-	add_child(holder)
-	var walk_mat := pbr("concrete_pavement", 0.35, Color(0.85, 0.85, 0.9))
-	for ix in LINES.size() - 1:
-		for iz in LINES.size() - 1:
-			var x0: float = LINES[ix] + ROAD_HALF
-			var x1: float = LINES[ix + 1] - ROAD_HALF
-			var z0: float = LINES[iz] + ROAD_HALF
-			var z1: float = LINES[iz + 1] - ROAD_HALF
-			var block := Rect2(x0, z0, x1 - x0, z1 - z0)
-			# Chodnik s obrubnikem
-			static_box(Vector3(block.size.x, CURB, block.size.y), Transform3D(Basis(), Vector3(block.get_center().x, CURB * 0.5, block.get_center().y)), walk_mat, holder)
-			var inner := block.grow(-SIDEWALK)
-			var center_dist := Vector2(inner.get_center()).length()
-			_fill_block(holder, inner, center_dist)
-
-
-## Neviditelna zed (jen kolize) mezi dvema body - uzavira mezery mezi budovami,
-## aby se v nich auto pri otreni o fasadu nezaseklo.
-func invisible_wall(a: Vector3, b: Vector3, inward: Vector3) -> void:
-	var body := StaticBody3D.new()
-	body.name = "NeviditelnaZed"
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	var length := a.distance_to(b)
-	shape.size = Vector3(length, 8.0, 0.6)
-	cs.shape = shape
-	body.add_child(cs)
-	add_child(body)
-	var dir := (b - a).normalized()
-	body.transform = Transform3D(Basis(dir, Vector3.UP, dir.cross(Vector3.UP)), (a + b) * 0.5 + Vector3(0, 4.0, 0) + inward.normalized() * 0.27)
-
-
-## Jedna souvisla kolizni plocha kolem celeho bloku domu (o 3 cm pred fasadami).
-## Auto se tak pri otreni dotyka jen jedne hladke plochy a nezachyti se o spary mezi domy.
-func _block_collider(r: Rect2) -> void:
-	var body := StaticBody3D.new()
-	body.name = "KolizeBloku"
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(r.size.x + 0.06, 8.0, r.size.y + 0.06)
-	cs.shape = shape
-	body.add_child(cs)
-	add_child(body)
-	body.position = Vector3(r.get_center().x, CURB + 4.0, r.get_center().y)
-
-
-func _fill_block(holder: Node3D, inner: Rect2, center_dist: float) -> void:
-	_block_collider(inner)
-	# Rozdeleni bloku na 2-3 x 2 parcely
-	var nx := 2 + int(rng.randf() < 0.4)
-	var nz := 2
-	var gap := 2.0
-	var cw := (inner.size.x - gap * (nx - 1)) / nx
-	var cd := (inner.size.y - gap * (nz - 1)) / nz
-	for i in nx:
-		for j in nz:
-			var x := inner.position.x + i * (cw + gap)
-			var z := inner.position.y + j * (cd + gap)
-			var tall := clampf(1.0 - center_dist / 260.0, 0.15, 1.0)
-			var h := rng.randf_range(14.0, 30.0) + rng.randf() * 85.0 * tall * tall
-			building(holder, Rect2(x, z, cw, cd), h)
-
-
-## Jedna budova s fasadou, vylohami, napisy a neonem na strese.
-func building(holder: Node3D, lot: Rect2, height: float) -> void:
-	var size := Vector3(lot.size.x, height, lot.size.y)
-	var center := Vector3(lot.get_center().x, CURB + height * 0.5, lot.get_center().y)
-	var facade: String = FACADES[rng.randi() % FACADES.size()]
-	var mat := ShaderMaterial.new()
-	mat.shader = _building_shader
-	mat.set_shader_parameter("wall_albedo", load("res://assets/textures/%s/%s_diff.jpg" % [facade, facade]))
-	mat.set_shader_parameter("wall_normal", load("res://assets/textures/%s/%s_nor.jpg" % [facade, facade]))
-	var tints := [Color(1, 1, 1), Color(0.75, 0.78, 0.85), Color(0.9, 0.82, 0.75), Color(0.6, 0.62, 0.7)]
-	mat.set_shader_parameter("wall_tint", tints[rng.randi() % tints.size()])
-	mat.set_shader_parameter("wall_scale", 0.22 if facade != "red_brick" else 0.35)
-	mat.set_shader_parameter("seed", rng.randf() * 100.0)
-	mat.set_shader_parameter("lit_ratio", rng.randf_range(0.25, 0.55))
-	mat.set_shader_parameter("cell", Vector2(rng.randf_range(2.6, 3.8), rng.randf_range(3.2, 3.8)))
-	var shop_cols := [Color(1.0, 0.8, 0.55), Color(0.8, 0.9, 1.0), Color(1.0, 0.65, 0.4)]
-	mat.set_shader_parameter("shop_color", shop_cols[rng.randi() % shop_cols.size()])
-	var body := static_box(size, Transform3D(Basis(), center), mat, holder)
-	body.name = "Budova"
-
-	# Strecha: tmava, s neonovym okrajem
-	var roof := simple(Color(0.06, 0.06, 0.07), 0.0, 0.9)
-	static_box(Vector3(size.x - 0.2, 0.3, size.z - 0.2), Transform3D(Basis(), Vector3(0, height * 0.5 + 0.15, 0)), roof, body, false)
-	if rng.randf() < 0.6:
-		var c: Color = NEON[rng.randi() % NEON.size()]
-		var rim := BoxMesh.new()
-		rim.size = Vector3(size.x + 0.25, 0.22, size.z + 0.25)
-		mesh_at(rim, simple(c, 0.0, 0.3, 5.0), Vector3(0, height * 0.5 - rng.randf_range(0.4, 2.0), 0), body)
-
-	# Napisy obchodu nad vylohami (na stranach k ulici)
-	var sides := [
-		[Vector3(0, 0, -size.z * 0.5 - 0.06), 180.0, size.x],
-		[Vector3(0, 0, size.z * 0.5 + 0.06), 0.0, size.x],
-		[Vector3(-size.x * 0.5 - 0.06, 0, 0), -90.0, size.z],
-		[Vector3(size.x * 0.5 + 0.06, 0, 0), 90.0, size.z],
-	]
-	for s in sides:
-		var along: float = s[2]
-		var dir := Basis(Vector3.UP, deg_to_rad(s[1]))
-		if rng.randf() < 0.6:
-			var off := rng.randf_range(-along * 0.25, along * 0.25)
-			var pos: Vector3 = center + s[0] + dir * Vector3(off, 0, 0)
-			pos.y = CURB + 5.5
-			signs.shop_sign(pos, s[1], minf(along * 0.6, 14.0))
-		# Svisla cedule u rohu vyssich budov
-		if height > 20.0 and rng.randf() < 0.22:
-			var corner := (along * 0.5 - 1.2) * (1.0 if rng.randf() < 0.5 else -1.0)
-			var bpos: Vector3 = center + s[0] + dir * Vector3(corner, 0, 0)
-			bpos.y = CURB + rng.randf_range(9.0, 13.0)
-			signs.blade_sign(bpos, s[1])
-	# Billboard na strese nekterych budov
-	if height < 45.0 and rng.randf() < 0.3:
-		var yaw: float = [0.0, 90.0, 180.0, -90.0][rng.randi() % 4]
-		signs.billboard(center + Vector3(0, height * 0.5 + 3.8, 0), yaw)
-		var leg := simple(Color(0.15, 0.15, 0.17), 0.8, 0.4)
-		for lx in [-4.5, 4.5]:
-			static_box(Vector3(0.3, 1.2, 0.3), Transform3D(Basis(Vector3.UP, deg_to_rad(yaw)), center + Vector3(0, height * 0.5 + 0.6, 0) + Basis(Vector3.UP, deg_to_rad(yaw)) * Vector3(lx, 0, -0.3)), leg, self, false)
-
-
-# ---------------------------------------------------------------------
-#  Okraj mesta (budovy kolem, at ulice nekonci do prazdna)
-# ---------------------------------------------------------------------
-
-func _build_outer_ring() -> void:
-	var holder := Node3D.new()
-	holder.name = "Okraj"
-	add_child(holder)
-	var walk_mat := pbr("concrete_pavement", 0.35, Color(0.85, 0.85, 0.9))
-	var edge: float = LINES[-1] + ROAD_HALF          # 188
-	var outer := edge + SIDEWALK + 45.0
-	# Chodniky + budovy na severu, jihu a zapade
-	var strips := [
-		Rect2(-outer, -outer, outer * 2.0, outer - edge),       # sever (z < -188)
-		Rect2(-outer, edge, outer * 2.0, outer - edge),         # jih (z > 188)
-		Rect2(-outer, -edge, outer - edge, edge * 2.0),         # zapad (x < -188)
-	]
-	for r in strips:
-		static_box(Vector3(r.size.x, CURB, r.size.y), Transform3D(Basis(), Vector3(r.get_center().x, CURB * 0.5, r.get_center().y)), walk_mat, holder)
-	# Budovy podel okraje
-	for side in 3:
-		var along := -edge
-		while along < edge:
-			var w := rng.randf_range(18.0, 34.0)
-			w = minf(w, edge - along)
-			if w < 8.0:
-				break
-			var d := rng.randf_range(22.0, 38.0)
-			var lot: Rect2
-			match side:
-				0: lot = Rect2(along, -edge - SIDEWALK - d, w, d)
-				1: lot = Rect2(along, edge + SIDEWALK, w, d)
-				_: lot = Rect2(-edge - SIDEWALK - d, along, d, w)
-			building(holder, lot, rng.randf_range(16.0, 55.0))
-			along += w + 2.0
-	# Neviditelne zdi podel rad budov na okraji (mezery mezi domy)
-	var fl := edge + SIDEWALK
-	invisible_wall(Vector3(-edge, 0, -fl), Vector3(edge, 0, -fl), Vector3(0, 0, -1))
-	invisible_wall(Vector3(-edge, 0, fl), Vector3(edge, 0, fl), Vector3(0, 0, 1))
-	invisible_wall(Vector3(-fl, 0, -edge), Vector3(-fl, 0, edge), Vector3(-1, 0, 0))
-	invisible_wall(Vector3(fl, 0, -edge), Vector3(fl, 0, LOT_RECT.position.y - 8.0), Vector3(1, 0, 0))
-	invisible_wall(Vector3(fl, 0, LOT_RECT.end.y + 8.0), Vector3(fl, 0, edge), Vector3(1, 0, 0))
-	# Vychod: budovy kolem parkoviste (nad a pod nim)
-	for zr in [[-edge, LOT_RECT.position.y - 8.0], [LOT_RECT.end.y + 8.0, edge]]:
-		static_box(Vector3(outer - edge, CURB, zr[1] - zr[0]), Transform3D(Basis(), Vector3((edge + outer) * 0.5, CURB * 0.5, (zr[0] + zr[1]) * 0.5)), walk_mat, holder)
-		var z: float = zr[0]
-		while z < zr[1] - 8.0:
-			var w := minf(rng.randf_range(18.0, 30.0), zr[1] - z)
-			building(holder, Rect2(edge + SIDEWALK, z, rng.randf_range(24.0, 36.0), w), rng.randf_range(16.0, 40.0))
-			z += w + 2.0
-
-
-# ---------------------------------------------------------------------
-#  Parkoviste
-# ---------------------------------------------------------------------
-
-func _build_parking_lot() -> void:
-	var holder := Node3D.new()
-	holder.name = "Parkoviste"
-	add_child(holder)
-	var r := LOT_RECT
-	var concrete := pbr("concrete_floor_worn_001", 0.4, Color(0.75, 0.75, 0.78))
-	# Obvodova zed (na zapade s vjezdy z ulic)
-	var wall_h := 1.2
-	static_box(Vector3(r.size.x, wall_h, 0.8), Transform3D(Basis(), Vector3(r.get_center().x, wall_h * 0.5, r.position.y)), concrete, holder)
-	static_box(Vector3(r.size.x, wall_h, 0.8), Transform3D(Basis(), Vector3(r.get_center().x, wall_h * 0.5, r.end.y)), concrete, holder)
-	static_box(Vector3(0.8, wall_h, r.size.y), Transform3D(Basis(), Vector3(r.end.x, wall_h * 0.5, r.get_center().y)), concrete, holder)
-	# Zapadni strana: chodnik s vjezdy u ulic z = -90, 0, 90
-	var walk_mat := pbr("concrete_pavement", 0.35, Color(0.85, 0.85, 0.9))
-	var edge: float = LINES[-1] + ROAD_HALF
-	var openings := [-90.0, 0.0, 90.0]
-	var z := r.position.y
-	for o in openings + [r.end.y + ROAD_HALF]:
-		var z_end: float = o - ROAD_HALF
-		if z_end > z:
-			static_box(Vector3(r.position.x - edge, CURB, z_end - z), Transform3D(Basis(), Vector3((edge + r.position.x) * 0.5, CURB * 0.5, (z + z_end) * 0.5)), walk_mat, holder)
-		z = o + ROAD_HALF
-	# Neonove pruhy na zdech
-	for wz in [r.position.y, r.end.y]:
-		var strip := BoxMesh.new()
-		strip.size = Vector3(r.size.x, 0.08, 0.85)
-		mesh_at(strip, simple(NEON[1], 0.0, 0.3, 3.0), Vector3(r.get_center().x, wall_h + 0.04, wz), holder)
-
-	# Sklad s rolovacimi vraty na vychode
-	var shutter := pbr("painted_metal_shutter", 0.25, Color(0.6, 0.65, 0.75))
-	var wh := Vector3(18, 12, 120)
-	static_box(wh, Transform3D(Basis(), Vector3(r.end.x - wh.x * 0.5 - 1.0, wh.y * 0.5, r.get_center().y)), pbr("container_side", 0.12, Color(0.35, 0.38, 0.45)), holder)
-	for i in 5:
-		var door_z := r.get_center().y - 40.0 + i * 20.0
-		static_box(Vector3(0.2, 5, 8), Transform3D(Basis(), Vector3(r.end.x - wh.x - 1.1, 2.5, door_z)), shutter, holder, false)
-		var lamp := BoxMesh.new()
-		lamp.size = Vector3(0.6, 0.15, 1.2)
-		mesh_at(lamp, simple(Color(1.0, 0.85, 0.6), 0.0, 0.3, 8.0), Vector3(r.end.x - wh.x - 1.5, 5.6, door_z), holder)
-		var l := SpotLight3D.new()
-		l.light_color = Color(1.0, 0.85, 0.6)
-		l.light_energy = 10.0
-		l.spot_range = 12.0
-		l.spot_angle = 60.0
-		l.position = Vector3(r.end.x - wh.x - 1.8, 5.5, door_z)
-		l.rotation_degrees = Vector3(-90, 0, 0)
-		holder.add_child(l)
-	signs.big_text("NITRO GARÁŽ", "stencil", Vector3(r.end.x - wh.x - 1.2, 9.0, r.get_center().y), -90.0, 0.055, NEON[0], 220)
-	for i in 3:
-		signs.arrow_sign(Vector3(r.end.x - wh.x - 1.25, 6.4, r.get_center().y - 40.0 + i * 40.0), -90.0)
-
-	# Velky napis NEON WRECK
-	var sign_pos := Vector3(r.get_center().x - 20.0, 10.0, r.position.y + 6.0)
-	static_box(Vector3(30, 7, 0.5), Transform3D(Basis(), sign_pos + Vector3(0, 0, -0.4)), simple(Color(0.03, 0.03, 0.05), 0.5, 0.4), holder)
-	for lx in [-11.0, 11.0]:
-		static_box(Vector3(0.6, sign_pos.y - 3.5, 0.6), Transform3D(Basis(), Vector3(sign_pos.x + lx, (sign_pos.y - 3.5) * 0.5, sign_pos.z - 0.4)), simple(Color(0.15, 0.15, 0.17), 0.8, 0.4), holder)
-	signs.big_text("NEON WRECK", "monoton", sign_pos, 0.0, 0.06, NEON[0], 260)
-
-	# Rampy
-	var ramp_mat := pbr("concrete_floor_worn_001", 0.4, Color(0.6, 0.6, 0.65))
-	var stripe := simple(Color(1.0, 0.75, 0.0), 0.0, 0.4, 3.0)
-	var ramps := [
-		[Vector3(r.get_center().x - 30.0, 0, r.get_center().y + 10.0), 0.0, 12.0, 2.2, 8.0],
-		[Vector3(r.get_center().x + 25.0, 0, r.get_center().y - 30.0), 90.0, 18.0, 3.6, 10.0],
-		[Vector3(r.get_center().x + 10.0, 0, r.get_center().y + 60.0), -90.0, 10.0, 1.5, 7.0],
-	]
-	for rp in ramps:
-		var length: float = rp[2]
-		var height: float = rp[3]
-		var width: float = rp[4]
-		var prism := PrismMesh.new()
-		prism.left_to_right = 1.0
-		prism.size = Vector3(length, height, width)
-		var body := StaticBody3D.new()
-		body.name = "Rampa"
-		holder.add_child(body)
-		body.position = (rp[0] as Vector3) + Vector3(0, height * 0.5, 0)
-		body.rotation_degrees = Vector3(0, 90.0 + float(rp[1]), 0)
-		mesh_at(prism, ramp_mat, Vector3.ZERO, body)
-		var cs := CollisionShape3D.new()
-		cs.shape = prism.create_convex_shape()
-		body.add_child(cs)
-		var edge_mesh := BoxMesh.new()
-		edge_mesh.size = Vector3(0.2, 0.1, width)
-		mesh_at(edge_mesh, stripe, Vector3(length * 0.5 - 0.1, height * 0.5 + 0.02, 0), body)
-
-	# Kontejnery
-	var cont_tints := [Color(0.7, 0.2, 0.15), Color(0.15, 0.35, 0.65), Color(0.2, 0.5, 0.3), Color(0.75, 0.55, 0.15)]
-	for c in [[Vector3(r.position.x + 40, 0, r.position.y + 20), 0.2], [Vector3(r.position.x + 46, 0, r.position.y + 24), 0.05],
-			[Vector3(r.position.x + 43, 2.6, r.position.y + 22), 0.12], [Vector3(r.end.x - 50, 0, r.end.y - 20), -0.4],
-			[Vector3(r.position.x + 70, 0, r.end.y - 15), 1.5]]:
-		var tint: Color = cont_tints[rng.randi() % cont_tints.size()]
-		static_box(Vector3(2.5, 2.6, 6.1), Transform3D(Basis(Vector3.UP, c[1]), (c[0] as Vector3) + Vector3(0, 1.3, 0)), pbr("container_side", 0.33, tint), holder)
-
-	# Betonove zabrany (model) - slalom a hrazeni
-	for i in 10:
-		place_prop("concrete_road_barrier", Vector3(r.position.x + 60 + i * 9.0, 0, r.get_center().y - 60 + (3.0 if i % 2 == 0 else -3.0)), rng.randf_range(-0.3, 0.3), false)
-	# Sudy a bedny (fyzicke, daji se odstrcit)
-	for i in 14:
-		place_prop("Barrel_01", Vector3(r.position.x + 120 + rng.randf_range(-12, 12), 0, r.get_center().y + 40 + rng.randf_range(-12, 12)), rng.randf() * TAU, true, 40.0)
-	for i in 8:
-		place_prop("wooden_crate_01", Vector3(r.position.x + 30 + rng.randf_range(-6, 6), 0, r.get_center().y - 20 + rng.randf_range(-6, 6)), rng.randf() * TAU, true, 15.0)
-
-	# Vysoke lampy na parkovisti
-	for ix in 4:
-		for iz in 4:
-			var p := Vector3(r.position.x + 30 + ix * 48.0, 0, r.position.y + 30 + iz * 53.0)
-			_lamp_positions.append(Transform3D(Basis(), p))
-
-
 ## Umisti model rekvizity z assets/props. dynamic = fyzicky objekt, ktery jde odstrcit.
 func place_prop(prop: String, pos: Vector3, yaw: float, dynamic: bool, mass := 30.0) -> Node3D:
 	var scene := load("res://assets/props/%s/%s_1k.gltf" % [prop, prop]) as PackedScene
@@ -491,25 +179,483 @@ func place_prop(prop: String, pos: Vector3, yaw: float, dynamic: bool, mass := 3
 	return body
 
 
+func _multimesh(mesh: Mesh, mat: Material) -> MultiMeshInstance3D:
+	var mmi := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	add_child(mmi)
+	return mmi
+
+
+func _fill_multimesh(mmi: MultiMeshInstance3D, xforms: Array[Transform3D]) -> void:
+	mmi.multimesh.instance_count = xforms.size()
+	for i in xforms.size():
+		mmi.multimesh.set_instance_transform(i, xforms[i])
+
+static func v3(p: Vector2, y := 0.0) -> Vector3:
+	return Vector3(p.x, y, p.y)
+
+
+## Prida trojuhelnik lezici v rovine tak, aby byl videt shora.
+func _tri_up(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, uv_a := Vector2.ZERO, uv_b := Vector2.ZERO, uv_c := Vector2.ZERO, uv2_a := Vector2.ZERO, uv2_b := Vector2.ZERO, uv2_c := Vector2.ZERO) -> void:
+	var cross := (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x)
+	var pts := [[a, uv_a, uv2_a], [b, uv_b, uv2_b], [c, uv_c, uv2_c]]
+	if cross < 0.0:
+		pts = [pts[0], pts[2], pts[1]]
+	for p in pts:
+		st.set_normal(Vector3.UP)
+		st.set_uv(p[1])
+		st.set_uv2(p[2])
+		st.add_vertex(p[0])
+
+
 # ---------------------------------------------------------------------
-#  Poulicni lampy (sodikove oranzove + bile), jedno MultiMesh pro vsechny
+#  Zem a silnice
 # ---------------------------------------------------------------------
+
+func _build_ground() -> void:
+	var body := StaticBody3D.new()
+	body.name = "Zem"
+	add_child(body)
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(8000, 2, 8000)
+	cs.shape = shape
+	cs.position = Vector3(0, -1, 0)
+	body.add_child(cs)
+	# Dlazba (chodniky a vnitrky bloku); silnice lezi tesne nad ni
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(8000, 8000)
+	var mi := mesh_at(plane, pbr("concrete_pavement", 0.3, Color(0.8, 0.8, 0.86)), Vector3(0, -0.02, 0), body)
+	mi.name = "Dlazba"
+
+
+func _build_roads() -> void:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/road.gdshader")
+	mat.set_shader_parameter("asphalt_albedo", load("res://assets/textures/asphalt_02/asphalt_02_diff.jpg"))
+	mat.set_shader_parameter("asphalt_normal", load("res://assets/textures/asphalt_02/asphalt_02_nor.jpg"))
+	mat.set_shader_parameter("asphalt_rough", load("res://assets/textures/asphalt_02/asphalt_02_rough.jpg"))
+	mat.set_shader_parameter("puddle_noise", noise_texture(0.02, 512, 7))
+	ground_material = mat
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var curb := SurfaceTool.new()
+	curb.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var y := 0.02
+	for e in map.polylines.size():
+		var w: float = map.half_width[e]
+		var axis := map.trimmed(e)
+		var left := CityMap.offset_polyline(axis, -w)
+		var right := CityMap.offset_polyline(axis, w)
+		var total := CityMap.polyline_length(axis)
+		var along := 0.0
+		st.set_color(Color(w / 32.0, 1.0, 0.0))
+		for i in axis.size() - 1:
+			var seg := axis[i].distance_to(axis[i + 1])
+			var a0 := along
+			var a1 := along + seg
+			_tri_up(st, v3(left[i], y), v3(left[i + 1], y), v3(right[i + 1], y),
+				Vector2(-w, a0), Vector2(-w, a1), Vector2(w, a1), Vector2(a0, total), Vector2(a1, total), Vector2(a1, total))
+			_tri_up(st, v3(left[i], y), v3(right[i + 1], y), v3(right[i], y),
+				Vector2(-w, a0), Vector2(w, a1), Vector2(w, a0), Vector2(a0, total), Vector2(a1, total), Vector2(a0, total))
+			along = a1
+		# Konce vozovky pro plochu krizovatky (levy/pravy roh pri pohledu z krizovatky ven)
+		var last := axis.size() - 1
+		_node_ends["%s:%d" % [CityMap.EDGES[e][0], e]] = [left[0], right[0]]
+		_node_ends["%s:%d" % [CityMap.EDGES[e][1], e]] = [right[last], left[last]]
+		# Obrubniky podel vozovky
+		for side in [-1, 1]:
+			if not map.is_open(e, side):
+				_curb_strip(curb, left if side < 0 else right, float(side))
+
+	# Plochy krizovatek
+	st.set_color(Color(0.0, 0.0, 0.0))
+	for id in CityMap.NODES:
+		var arr: Array = map.node_edges[id]
+		var poly: Array[Vector2] = []
+		for k in arr.size():
+			var ends: Array = _node_ends["%s:%d" % [id, arr[k].e]]
+			poly.append(ends[0])
+			poly.append(ends[1])
+		var center := v3(CityMap.NODES[id], y)
+		for i in poly.size():
+			_tri_up(st, center, v3(poly[i], y), v3(poly[(i + 1) % poly.size()], y))
+		# Obrubnik pres roh bloku (mezi sousednimi ulicemi)
+		for k in arr.size():
+			var e_a: int = arr[k].e
+			var e_b: int = arr[(k + 1) % arr.size()].e
+			var a_right_side := 1 if CityMap.EDGES[e_a][0] == id else -1
+			var b_left_side := -1 if CityMap.EDGES[e_b][0] == id else 1
+			if map.is_open(e_a, a_right_side) or map.is_open(e_b, b_left_side) or arr.size() < 2:
+				continue
+			var p0: Vector2 = poly[k * 2 + 1]
+			var p1: Vector2 = poly[((k + 1) % arr.size()) * 2]
+			if p0.distance_to(p1) > 0.3:
+				_curb_strip(curb, PackedVector2Array([p0, p1]), 1.0)
+
+	var mi := MeshInstance3D.new()
+	mi.name = "Silnice"
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	var cmi := MeshInstance3D.new()
+	cmi.name = "Obrubniky"
+	cmi.mesh = curb.commit()
+	cmi.material_override = simple(Color(0.55, 0.55, 0.58), 0.0, 0.85)
+	add_child(cmi)
+
+
+## Obrubnik: uzky zvyseny pruh podel cary (side = na kterou stranu od cary lezi).
+func _curb_strip(st: SurfaceTool, line: PackedVector2Array, side: float) -> void:
+	var outer := CityMap.offset_polyline(line, side * 0.3)
+	for i in line.size() - 1:
+		var a := v3(line[i], CURB)
+		var b := v3(line[i + 1], CURB)
+		var c := v3(outer[i + 1], CURB)
+		var d := v3(outer[i], CURB)
+		_tri_up(st, a, b, c)
+		_tri_up(st, a, c, d)
+		# Svisla hrana k vozovce
+		var a0 := v3(line[i], 0.0)
+		var b0 := v3(line[i + 1], 0.0)
+		var n := v3(CityMap.right_of((line[i + 1] - line[i]).normalized()) * -side)
+		for tri in [[a0, b0, b], [a0, b, a]]:
+			var t0: Vector3 = tri[0]
+			var t1: Vector3 = tri[1]
+			var t2: Vector3 = tri[2]
+			if (t1 - t0).cross(t2 - t0).dot(n) > 0.0:   # Godot: predni strana = po smeru hodin
+				var tmp := t1
+				t1 = t2
+				t2 = tmp
+			for p in [t0, t1, t2]:
+				st.set_normal(n)
+				st.set_uv(Vector2.ZERO)
+				st.add_vertex(p)
+
+
+# ---------------------------------------------------------------------
+#  Zdi (kolize): jedna spojita sit kolem vsech bloku
+# ---------------------------------------------------------------------
+
+func _build_walls() -> void:
+	# Auto se dotyka jen teto hladke site (domy samy kolizi nemaji), takze se nezasekne o spary.
+	var faces := PackedVector3Array()
+	for e in map.polylines.size():
+		for side in [-1, 1]:
+			if map.is_open(e, side):
+				continue
+			var line := map.block_line(e, side, CityMap.SIDEWALK)
+			for i in line.size() - 1:
+				var a := v3(line[i])
+				var b := v3(line[i + 1])
+				var a1 := a + Vector3.UP * WALL_HEIGHT
+				var b1 := b + Vector3.UP * WALL_HEIGHT
+				faces.append_array([a, b, b1, a, b1, a1])
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	shape.set_faces(faces)
+	var body := StaticBody3D.new()
+	body.name = "Zdi"
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
+
+
+# ---------------------------------------------------------------------
+#  Domy podel ulic
+# ---------------------------------------------------------------------
+
+## Obrys v rovine: stred c, osa ax (jednotkova), polovina delky hx (podel osy) a hy (kolmo).
+func _obb(c: Vector2, ax: Vector2, hx: float, hy: float) -> Dictionary:
+	return {"c": c, "ax": ax, "hx": hx, "hy": hy}
+
+
+func _obb_overlap(a: Dictionary, b: Dictionary) -> bool:
+	var d: Vector2 = b.c - a.c
+	for ax in [a.ax, CityMap.right_of(a.ax), b.ax, CityMap.right_of(b.ax)]:
+		var axis: Vector2 = ax
+		var ra: float = absf(axis.dot(a.ax)) * a.hx + absf(axis.dot(CityMap.right_of(a.ax))) * a.hy
+		var rb: float = absf(axis.dot(b.ax)) * b.hx + absf(axis.dot(CityMap.right_of(b.ax))) * b.hy
+		if absf(d.dot(axis)) > ra + rb:
+			return false
+	return true
+
+
+func _grid_cells(o: Dictionary) -> Array:
+	var px: Vector2 = CityMap.right_of(o.ax)
+	var ex: float = absf(o.ax.x) * o.hx + absf(px.x) * o.hy
+	var ez: float = absf(o.ax.y) * o.hx + absf(px.y) * o.hy
+	var cells := []
+	for gx in range(int(floor((o.c.x - ex) / 80.0)), int(floor((o.c.x + ex) / 80.0)) + 1):
+		for gz in range(int(floor((o.c.y - ez) / 80.0)), int(floor((o.c.y + ez) / 80.0)) + 1):
+			cells.append(Vector2i(gx, gz))
+	return cells
+
+
+func _grid_add(o: Dictionary) -> void:
+	for cell in _grid_cells(o):
+		if not _grid.has(cell):
+			_grid[cell] = []
+		_grid[cell].append(o)
+
+
+func _grid_free(o: Dictionary) -> bool:
+	for cell in _grid_cells(o):
+		for other in _grid.get(cell, []):
+			if _obb_overlap(o, other):
+				return false
+	return true
+
+
+func _build_buildings() -> void:
+	var holder := Node3D.new()
+	holder.name = "Domy"
+	add_child(holder)
+	# Koridory ulic (vozovka + chodniky): do nich dum nesmi zasahnout
+	for e in map.polylines.size():
+		var pl := map.polylines[e]
+		for i in pl.size() - 1:
+			var d := (pl[i + 1] - pl[i])
+			_grid_add(_obb((pl[i] + pl[i + 1]) * 0.5, d.normalized(), d.length() * 0.5 + 1.0, map.half_width[e] + CityMap.SIDEWALK - 0.4))
+	for e in map.polylines.size():
+		for side in [-1, 1]:
+			if map.is_open(e, side):
+				continue
+			var line := map.block_line(e, side, CityMap.SIDEWALK + 0.25)
+			for i in line.size() - 1:
+				_fill_frontage(holder, line[i], line[i + 1], float(side))
+
+
+## Zaplni usek ulicni cary domy (od bodu p k bodu q; domy stoji na strane side od smeru p->q).
+func _fill_frontage(holder: Node3D, p: Vector2, q: Vector2, side: float) -> void:
+	var length := p.distance_to(q)
+	if length < 7.0:
+		return
+	var dir := (q - p) / length
+	var inward := CityMap.right_of(dir) * side
+	var s := 0.3
+	while s < length - 6.0:
+		var width := minf(rng.randf_range(14.0, 30.0), length - s - 0.3)
+		if length - s - width < 8.0:
+			width = length - s - 0.3
+		var placed := false
+		for attempt in [[width, rng.randf_range(16.0, 26.0)], [width, 11.0], [minf(width, 12.0), 9.0], [minf(width, 8.0), 6.5]]:
+			var wd: float = attempt[0]
+			var depth: float = attempt[1]
+			var center := p + dir * (s + wd * 0.5) + inward * (depth * 0.5)
+			var o := _obb(center, dir, wd * 0.5 - 0.1, depth * 0.5 - 0.1)
+			if _grid_free(o):
+				_grid_add(_obb(center, dir, wd * 0.5 + 0.4, depth * 0.5 + 0.4))
+				_make_building(holder, center, dir, inward, wd, depth)
+				# Druha rada: vyssi dum ve vnitrobloku (aby mezi domy nebylo videt prazdno)
+				if depth > 10.0 and rng.randf() < 0.7:
+					var bw := rng.randf_range(18.0, 32.0)
+					var bd := rng.randf_range(18.0, 30.0)
+					var bc := center + inward * (depth * 0.5 + 3.0 + bd * 0.5)
+					if _grid_free(_obb(bc, dir, bw * 0.5, bd * 0.5)):
+						_grid_add(_obb(bc, dir, bw * 0.5 + 0.4, bd * 0.5 + 0.4))
+						_make_building(holder, bc, dir, inward, bw, bd, true)
+				s += wd + rng.randf_range(0.0, 1.5)
+				placed = true
+				break
+		if not placed:
+			s += 5.0
+
+
+func _facade_material(facade: String) -> ShaderMaterial:
+	if not _facade_mats.has(facade):
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/building.gdshader")
+		mat.set_shader_parameter("wall_albedo", load("res://assets/textures/%s/%s_diff.jpg" % [facade, facade]))
+		mat.set_shader_parameter("wall_normal", load("res://assets/textures/%s/%s_nor.jpg" % [facade, facade]))
+		mat.set_shader_parameter("wall_scale", 0.22 if facade != "red_brick" else 0.35)
+		_facade_mats[facade] = mat
+	return _facade_mats[facade]
+
+
+## Jeden dum: kvadr s fasadou (okna, vylohy), obcas neon na strese, cedule nebo billboard.
+func _make_building(holder: Node3D, center: Vector2, dir: Vector2, inward: Vector2, width: float, depth: float, back_row := false) -> void:
+	building_count += 1
+	var tall := clampf(1.0 - center.length() / 650.0, 0.0, 1.0)
+	var height := rng.randf_range(11.0, 26.0) + rng.randf() * 95.0 * tall * tall
+	if depth < 10.0:
+		height = minf(height, rng.randf_range(8.0, 16.0))
+	if back_row:
+		height = height * 1.25 + rng.randf_range(6.0, 22.0)
+	var mi := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(width, height, depth)
+	mi.mesh = box
+	mi.material_override = _facade_material(FACADES[rng.randi() % FACADES.size()])
+	holder.add_child(mi)
+	mi.position = Vector3(center.x, height * 0.5, center.y)
+	mi.rotation.y = -atan2(dir.y, dir.x)
+	var tints := [Color(1, 1, 1), Color(0.75, 0.78, 0.85), Color(0.9, 0.82, 0.75), Color(0.6, 0.62, 0.7)]
+	var shop_cols := [Color(1.0, 0.8, 0.55), Color(0.8, 0.9, 1.0), Color(1.0, 0.65, 0.4)]
+	mi.set_instance_shader_parameter("wall_tint", tints[rng.randi() % tints.size()])
+	mi.set_instance_shader_parameter("seed", rng.randf() * 100.0)
+	mi.set_instance_shader_parameter("lit_ratio", rng.randf_range(0.25, 0.55))
+	mi.set_instance_shader_parameter("half_height", height * 0.5)
+	mi.set_instance_shader_parameter("cell", Vector2(rng.randf_range(2.6, 3.8), rng.randf_range(3.2, 3.8)))
+	mi.set_instance_shader_parameter("shop_color", shop_cols[rng.randi() % shop_cols.size()])
+
+	if back_row:
+		mi.visibility_range_end = 900.0
+		if height > 45.0 and rng.randf() < 0.5:
+			var top := BoxMesh.new()
+			top.size = Vector3(width + 0.25, 0.3, depth + 0.25)
+			var tmi := mesh_at(top, simple(NEON[rng.randi() % NEON.size()], 0.0, 0.3, 5.0), Vector3(0, height * 0.5 - 0.6, 0), mi)
+			tmi.visibility_range_end = 700.0
+		return
+	if rng.randf() < 0.4 and height > 14.0:
+		var rim := BoxMesh.new()
+		rim.size = Vector3(width + 0.25, 0.22, depth + 0.25)
+		var rmi := mesh_at(rim, simple(NEON[rng.randi() % NEON.size()], 0.0, 0.3, 5.0), Vector3(0, height * 0.5 - rng.randf_range(0.4, 2.0), 0), mi)
+		rmi.visibility_range_end = 700.0
+
+	# Cedule na fasade k ulici
+	var out := -inward
+	var yaw_deg := rad_to_deg(atan2(out.x, out.y))
+	var front := center + out * (depth * 0.5 + 0.08)
+	if width >= 9.0 and rng.randf() < 0.45:
+		var off := rng.randf_range(-width * 0.2, width * 0.2)
+		signs.shop_sign(v3(front + dir * off, 5.5), yaw_deg, minf(width * 0.6, 14.0))
+	if height > 20.0 and rng.randf() < 0.12:
+		var corner_off := (width * 0.5 - 1.2) * (1.0 if rng.randf() < 0.5 else -1.0)
+		signs.blade_sign(v3(front + dir * corner_off, rng.randf_range(9.0, 13.0)), yaw_deg)
+	if height < 40.0 and width >= 15.0 and depth > 10.0 and rng.randf() < 0.1:
+		signs.billboard(Vector3(center.x, height + 3.8, center.y), yaw_deg)
+
+
+# ---------------------------------------------------------------------
+#  Treninkova plocha (velke parkoviste bez domu)
+# ---------------------------------------------------------------------
+
+func _build_lot() -> void:
+	var holder := Node3D.new()
+	holder.name = "TreninkovaPlocha"
+	add_child(holder)
+	var poly := map.lot_polygon(-0.3)
+	var inner := map.lot_polygon(6.0)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(Color(0.0, 0.0, 0.0))
+	var idx := Geometry2D.triangulate_polygon(poly)
+	for i in range(0, idx.size(), 3):
+		_tri_up(st, v3(poly[idx[i]], 0.012), v3(poly[idx[i + 1]], 0.012), v3(poly[idx[i + 2]], 0.012))
+	var mi := MeshInstance3D.new()
+	mi.name = "AsfaltPlochy"
+	mi.mesh = st.commit()
+	mi.material_override = ground_material
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(mi)
+
+	var c := Vector2.ZERO
+	for p in poly:
+		c += p / poly.size()
+	var inside := func(p: Vector2) -> bool: return Geometry2D.is_point_in_polygon(p, inner)
+
+	# Sklad "NITRO GARAZ" s rolovacimi vraty
+	var shutter := pbr("painted_metal_shutter", 0.25, Color(0.6, 0.65, 0.75))
+	var wh_pos := c + Vector2(-70, -30)
+	var wh := Vector3(16, 11, 70)
+	static_box(wh, Transform3D(Basis(), v3(wh_pos, wh.y * 0.5)), pbr("container_side", 0.12, Color(0.35, 0.38, 0.45)), holder)
+	for i in 3:
+		var dz := -22.0 + i * 22.0
+		static_box(Vector3(0.2, 5, 8), Transform3D(Basis(), v3(wh_pos + Vector2(wh.x * 0.5 + 0.1, dz), 2.5)), shutter, holder, false)
+		var lamp := BoxMesh.new()
+		lamp.size = Vector3(0.6, 0.15, 1.2)
+		mesh_at(lamp, simple(Color(1.0, 0.85, 0.6), 0.0, 0.3, 8.0), v3(wh_pos + Vector2(wh.x * 0.5 + 0.5, dz), 5.6), holder)
+	signs.big_text("NITRO GARÁŽ", "stencil", v3(wh_pos + Vector2(wh.x * 0.5 + 0.2, 0), 8.6), 90.0, 0.05, NEON[0], 220)
+	signs.big_text("NEON WRECK", "monoton", v3(c + Vector2(0, -95), 9.0), 0.0, 0.06, NEON[1], 260)
+
+	# Rampy
+	var ramp_mat := pbr("concrete_floor_worn_001", 0.4, Color(0.6, 0.6, 0.65))
+	var stripe := simple(Color(1.0, 0.75, 0.0), 0.0, 0.4, 3.0)
+	for rp in [[c + Vector2(-10, 20), 0.0, 12.0, 2.2, 8.0], [c + Vector2(45, -20), 90.0, 18.0, 3.6, 10.0], [c + Vector2(20, 60), -90.0, 10.0, 1.5, 7.0]]:
+		var pos: Vector2 = rp[0]
+		if not inside.call(pos):
+			continue
+		var length: float = rp[2]
+		var height: float = rp[3]
+		var width: float = rp[4]
+		var prism := PrismMesh.new()
+		prism.left_to_right = 1.0
+		prism.size = Vector3(length, height, width)
+		var body := StaticBody3D.new()
+		body.name = "Rampa"
+		holder.add_child(body)
+		body.position = v3(pos, height * 0.5)
+		body.rotation_degrees = Vector3(0, 90.0 + float(rp[1]), 0)
+		mesh_at(prism, ramp_mat, Vector3.ZERO, body)
+		var cs := CollisionShape3D.new()
+		cs.shape = prism.create_convex_shape()
+		body.add_child(cs)
+		var edge_mesh := BoxMesh.new()
+		edge_mesh.size = Vector3(0.2, 0.1, width)
+		mesh_at(edge_mesh, stripe, Vector3(length * 0.5 - 0.1, height * 0.5 + 0.02, 0), body)
+
+	# Kontejnery, zabrany (slalom), sudy a bedny
+	var cont_tints := [Color(0.7, 0.2, 0.15), Color(0.15, 0.35, 0.65), Color(0.2, 0.5, 0.3), Color(0.75, 0.55, 0.15)]
+	for cdef in [[Vector2(70, 40), 0.2], [Vector2(76, 44), 0.05], [Vector2(-30, 80), 1.5], [Vector2(60, -70), -0.4]]:
+		var cp: Vector2 = c + cdef[0]
+		if inside.call(cp):
+			static_box(Vector3(2.5, 2.6, 6.1), Transform3D(Basis(Vector3.UP, cdef[1]), v3(cp, 1.3)), pbr("container_side", 0.33, cont_tints[rng.randi() % cont_tints.size()]), holder)
+	for i in 9:
+		var bp := c + Vector2(-40.0 + i * 10.0, -55.0 + (3.0 if i % 2 == 0 else -3.0))
+		if inside.call(bp):
+			place_prop("concrete_road_barrier", v3(bp), rng.randf_range(-0.3, 0.3), false)
+	for i in 14:
+		var bp := c + Vector2(55 + rng.randf_range(-10, 10), 5 + rng.randf_range(-10, 10))
+		if inside.call(bp):
+			place_prop("Barrel_01", v3(bp), rng.randf() * TAU, true, 40.0)
+	for i in 8:
+		var bp := c + Vector2(-25 + rng.randf_range(-6, 6), 45 + rng.randf_range(-6, 6))
+		if inside.call(bp):
+			place_prop("wooden_crate_01", v3(bp), rng.randf() * TAU, true, 15.0)
+
+	# Vysoke lampy na plose (y = 0 znamena vysokou lampu se dvema svetly)
+	for ix in range(-3, 4):
+		for iz in range(-3, 4):
+			var lp := c + Vector2(ix * 55.0, iz * 55.0 + 27.0)
+			if inside.call(lp):
+				_lamp_positions.append(Transform3D(Basis(), v3(lp)))
+
+
+# ---------------------------------------------------------------------
+#  Poulicni lampy
+# ---------------------------------------------------------------------
+
+func _collect_street_lamps() -> void:
+	for e in map.polylines.size():
+		var w: float = map.half_width[e]
+		var axis := map.trimmed(e)
+		var total := CityMap.polyline_length(axis)
+		var count := int(total / 46.0)
+		for k in count:
+			var dist := total * (k + 0.5) / count
+			var side := 1.0 if (k + e) % 2 == 0 else -1.0
+			# Bod a smer ve vzdalenosti dist podel osy
+			var acc := 0.0
+			for i in axis.size() - 1:
+				var seg := axis[i].distance_to(axis[i + 1])
+				if acc + seg >= dist:
+					var dir := (axis[i + 1] - axis[i]) / seg
+					var p := axis[i] + dir * (dist - acc) + CityMap.right_of(dir) * side * (w + 0.9)
+					var to_road := -CityMap.right_of(dir) * side
+					_lamp_positions.append(Transform3D(Basis.looking_at(v3(to_road), Vector3.UP), v3(p, 0.06)))
+					break
+				acc += seg
+
 
 func _build_street_lamps() -> void:
-	# Pozice podel ulic, na obou stranach, mimo krizovatky
-	var off := ROAD_HALF + 0.8
-	for line in LINES:
-		for seg in LINES.size() - 1:
-			var a: float = LINES[seg] + ROAD_HALF + SIDEWALK + 6.0
-			var b: float = LINES[seg + 1] - ROAD_HALF - SIDEWALK - 6.0
-			for k in 2:
-				var t := lerpf(a, b, (k + 0.5) / 2.0)
-				for side in [-1.0, 1.0]:
-					# Ulice ve smeru Z (x = line) - rameno miri k ose ulice
-					_lamp_positions.append(Transform3D(Basis(Vector3.UP, -PI * 0.5 if side < 0 else PI * 0.5), Vector3(line + side * off, CURB, t + side * 12.0)))
-					# Ulice ve smeru X (z = line)
-					_lamp_positions.append(Transform3D(Basis(Vector3.UP, PI if side < 0 else 0.0), Vector3(t + side * 12.0, CURB, line + side * off)))
-
 	var pole_mesh := CylinderMesh.new()
 	pole_mesh.top_radius = 0.09
 	pole_mesh.bottom_radius = 0.15
@@ -678,35 +824,24 @@ func _on_lamp_hit(hit_body: Node3D, rec: Dictionary, area: Area3D) -> void:
 		rb.call("apply_damage", 0.8)
 
 
-func _multimesh(mesh: Mesh, mat: Material) -> MultiMeshInstance3D:
-	var mmi := MultiMeshInstance3D.new()
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mmi.multimesh = mm
-	mmi.material_override = mat
-	add_child(mmi)
-	return mmi
-
-
-func _fill_multimesh(mmi: MultiMeshInstance3D, xforms: Array[Transform3D]) -> void:
-	mmi.multimesh.instance_count = xforms.size()
-	for i in xforms.size():
-		mmi.multimesh.set_instance_transform(i, xforms[i])
-
-
 # ---------------------------------------------------------------------
-#  Drobnosti na chodnicich
+#  Drobnosti na chodnicich (daji se odstrcit)
 # ---------------------------------------------------------------------
 
 func _build_street_props() -> void:
-	for line in LINES:
-		for seg in LINES.size() - 1:
-			var a: float = LINES[seg] + ROAD_HALF + SIDEWALK + 4.0
-			var b: float = LINES[seg + 1] - ROAD_HALF - SIDEWALK - 4.0
-			if rng.randf() < 0.5:
-				var t := rng.randf_range(a, b)
-				place_prop("metal_trash_can", Vector3(line + ROAD_HALF + 2.0, CURB, t), rng.randf() * TAU, true, 20.0)
-			if rng.randf() < 0.4:
-				var t2 := rng.randf_range(a, b)
-				place_prop("fire_hydrant", Vector3(t2, CURB, line - ROAD_HALF - 1.2), 0.0, true, 45.0)
+	for e in map.polylines.size():
+		var w: float = map.half_width[e]
+		var axis := map.trimmed(e)
+		for i in axis.size() - 1:
+			var seg := axis[i].distance_to(axis[i + 1])
+			if seg < 30.0 or rng.randf() > 0.35:
+				continue
+			var dir := (axis[i + 1] - axis[i]) / seg
+			var side := 1.0 if rng.randf() < 0.5 else -1.0
+			if map.is_open(e, int(side)):
+				continue
+			var p := axis[i] + dir * rng.randf_range(10.0, seg - 10.0) + CityMap.right_of(dir) * side * (w + 2.4)
+			if rng.randf() < 0.6:
+				place_prop("metal_trash_can", v3(p, 0.0), rng.randf() * TAU, true, 20.0)
+			else:
+				place_prop("fire_hydrant", v3(p, 0.0), 0.0, true, 45.0)

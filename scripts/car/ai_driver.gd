@@ -27,16 +27,21 @@ func _ready() -> void:
 
 
 ## Pripravi stopu z rohovych bodu (krizovatek): zatacky se zaobli obloukem o polomeru radius.
-func set_route(corners: PackedVector3Array, radius := 26.0) -> void:
-	line = rounded_path(corners, radius, _step)
+## radii = volitelne polomer pro kazdy roh zvlast (jinak plati radius pro vsechny).
+func set_route(corners: PackedVector3Array, radius := 26.0, radii := PackedFloat32Array()) -> void:
+	line = rounded_path(corners, radius, _step, radii)
 	_build_speed_profile()
 	snap_to_line()
 
 
-static func rounded_path(corners: PackedVector3Array, radius: float, step: float) -> PackedVector3Array:
+static func rounded_path(corners: PackedVector3Array, radius: float, step: float, radii := PackedFloat32Array()) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	var n := corners.size()
 	for i in n:
+		var prev_radius := radius
+		if radii.size() == n:
+			radius = radii[i]
+			prev_radius = radii[posmod(i - 1, n)]
 		var prev := corners[posmod(i - 1, n)]
 		var p := corners[i]
 		var next := corners[(i + 1) % n]
@@ -48,7 +53,7 @@ static func rounded_path(corners: PackedVector3Array, radius: float, step: float
 		# Rovinka od konce predchoziho oblouku k zacatku tohoto
 		var prev_prev := corners[posmod(i - 2, n)]
 		var prev_angle := (prev - prev_prev).normalized().angle_to(d_in)
-		var prev_t := minf(radius * tan(prev_angle * 0.5), minf((prev - prev_prev).length(), (p - prev).length()) * 0.45)
+		var prev_t := minf(prev_radius * tan(prev_angle * 0.5), minf((prev - prev_prev).length(), (p - prev).length()) * 0.45)
 		var a := prev + d_in * prev_t
 		var b := p - d_in * t_len
 		var seg_len := (b - a).length()

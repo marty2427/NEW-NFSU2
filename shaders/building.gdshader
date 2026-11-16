@@ -1,25 +1,27 @@
 shader_type spatial;
 // Fasada budovy: textura (beton, cihly, oblozeni), okna s nahodne rozsvicenymi
-// mistnostmi a v prizemi osvetlene vylohy obchodu.
+// mistnostmi a v prizemi osvetlene vylohy obchodu. Pocita se v souradnicich budovy,
+// takze funguje i pro domy natocene v libovolnem uhlu. Hodnoty "instance" ma kazdy dum jine.
 
 uniform sampler2D wall_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D wall_normal : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform vec3 wall_tint : source_color = vec3(1.0);
+instance uniform vec3 wall_tint : source_color = vec3(1.0);
 uniform float wall_scale = 0.25;         // opakovani textury (1/m)
-uniform float seed = 0.0;
-uniform float lit_ratio = 0.35;
-uniform vec2 cell = vec2(3.2, 3.6);      // rozestup oken (sirka, vyska patra)
+instance uniform float seed = 0.0;
+instance uniform float lit_ratio = 0.35;
+instance uniform float half_height = 10.0;   // polovina vysky domu (stred kvadru je v pulce)
+instance uniform vec2 cell = vec2(3.2, 3.6);      // rozestup oken (sirka, vyska patra)
 uniform float window_energy = 1.3;
 uniform float shop_height = 4.6;         // vyska prizemi s vylohami
 uniform float shop_energy = 0.9;
-uniform vec3 shop_color : source_color = vec3(1.0, 0.8, 0.55);
+instance uniform vec3 shop_color : source_color = vec3(1.0, 0.8, 0.55);
 
 varying vec3 wpos;
 varying vec3 wnorm;
 
 void vertex() {
-	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	wnorm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	wpos = VERTEX + vec3(0.0, half_height, 0.0);   // vyska nad zemi
+	wnorm = NORMAL;
 }
 
 float hash(vec2 p) {

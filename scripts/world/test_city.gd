@@ -1,8 +1,6 @@
 extends Node3D
-## Testovaci mapa: velke parkoviste + mestska ctvrt s ulicemi.
+## Velke mesto s nepravidelnymi ulicemi, mestskym okruhem a treninkovou plochou.
 ## Ve dne (vyvoj) nebo v noci s neonovou atmosferou (F8). Varianta rizeni F7.
-
-const SPAWN := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(232.0, 0.6, 0.0))
 
 var car: RigidBody3D   # Car nebo GevpCar (podle varianty rizeni F7)
 var camera: ChaseCamera
@@ -24,6 +22,7 @@ func _ready() -> void:
 	circuit = Circuit.new()
 	circuit.name = "Okruh"
 	add_child(circuit)
+	circuit.setup(city.map)
 	_spawn_player()
 	_apply_daylight(Hra.daylight)
 	Hra.daylight_changed.connect(_apply_daylight)
@@ -48,12 +47,14 @@ func _spawn_player() -> void:
 	camera = ChaseCamera.new()
 	camera.name = "Kamera"
 	add_child(camera)
-	camera.global_position = SPAWN.origin + SPAWN.basis * Vector3(0, 2, 7)
+	var spawn := circuit.grid_transform()
+	camera.global_position = spawn.origin + spawn.basis * Vector3(0, 2, 7)
 	hud = HUD.new()
 	add_child(hud)
 	hud.circuit = circuit
+	hud.city_map = city.map
 	var cars := CarTuning.list_cars()
-	spawn_car(cars[0] if not cars.is_empty() else "octavia", SPAWN)
+	spawn_car(cars[0] if not cars.is_empty() else "octavia", spawn)
 	hud.show_message(car.t.nazev, 3.0)
 
 
@@ -107,8 +108,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		hud.show_message("Den" if Hra.daylight else "Noc", 1.5)
 	if event.is_action_pressed("na_start"):
 		# Postavi auto pred startovni branu okruhu
-		var st := Circuit.start_transform()
-		spawn_car(car.car_id, Transform3D(st.basis, st.origin + st.basis.z * 25.0))
+		spawn_car(car.car_id, circuit.grid_transform())
 		circuit.reset()
 		hud.show_message("Na startu", 1.5)
 	if event.is_action_pressed("zvuk"):
@@ -124,7 +124,8 @@ func _on_car_exploded(c: Node) -> void:
 	await get_tree().create_timer(4.0).timeout
 	if not is_instance_valid(c) or c != car:
 		return
-	spawn_car(c.car_id, SPAWN)
+	spawn_car(c.car_id, circuit.grid_transform())
+	circuit.reset()
 	hud.show_message("Nové auto připraveno", 2.0)
 
 
@@ -268,6 +269,8 @@ func _apply_daylight(day: bool) -> void:
 	# Poulicni lampy sviti jen v noci (ve dne by jen zbytecne braly vykon)
 	for node in get_tree().get_nodes_in_group("street_lights"):
 		(node as Light3D).visible = not day
+	if city:
+		city.set_daylight(day)
 	if city and city.ground_material:
 		city.ground_material.set_shader_parameter("wetness", 0.45 if day else 0.85)
 	Graphics.apply()

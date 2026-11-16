@@ -21,6 +21,8 @@ func _ready() -> void:
 			_wall_angle = float(arg.substr(11))
 		if arg.begins_with("--lap="):
 			_lap_car = arg.substr(6)
+		if arg.begins_with("--r="):
+			_lap_margin = float(arg.substr(4))
 		if arg.begins_with("--g="):
 			_lap_g = float(arg.substr(4))
 		if arg == "--analog":
@@ -47,6 +49,7 @@ func _once(key: String) -> bool:
 
 var _lap_car := ""
 var _lap_g := 1.4
+var _lap_margin := 2.0
 var _lap_keyboard := true
 var _ai: AIDriver
 var _lap_start := 0.0
@@ -60,7 +63,7 @@ var _max_slip := 0.0
 ## Test okruhu: pocitacovy jezdec (ovlada jako klavesnice) jede 2 kola, meri se cas a chyby.
 func _lap_test(t: float, car) -> void:
 	if t > 0.2 and _once("lapset"):
-		arena.spawn_car(_lap_car, Circuit.start_transform())
+		arena.spawn_car(_lap_car, arena.circuit.grid_transform())
 		car = arena.car
 		for ch in car.get_children():
 			if ch is PlayerController:
@@ -70,7 +73,8 @@ func _lap_test(t: float, car) -> void:
 		_ai.keyboard = _lap_keyboard
 		_ai.lat_g = _lap_g
 		car.add_child(_ai)
-		_ai.set_route(Circuit.path())
+		var rl: Dictionary = arena.circuit.racing_line(_lap_margin)
+		_ai.set_route(rl.corners, 24.0, rl.radii)
 		if car.has_signal("impact"):
 			car.impact.connect(func(_c, dv, pos):
 				_impacts += 1
@@ -94,7 +98,7 @@ func _lap_test(t: float, car) -> void:
 	if _ai.laps >= 1 and _once("lap1"):
 		print("[LAP] %s g=%.2f kolo 1: %.1f s" % [_lap_car, _lap_g, t - _lap_start])
 		_lap_start = t
-	if _ai.laps >= 2 or t > 150.0:
+	if _ai.laps >= 2 or t > 330.0:
 		print("[LAP] %s g=%.2f %s: %.1f s | odchylka od stopy max %.1f m | narazy %d (tvrde %d) | poskozeni %.0f | v min %.0f max %.0f | smyk max %.0f st" % [
 			_lap_car, _lap_g, "kolo 2" if _ai.laps >= 2 else "NEDOJEL (i %d)" % _ai.index, t - _lap_start, _ai.off_line_max, _impacts, _hard_impacts, car.damage, _min_v, _max_v, _max_slip])
 		get_tree().quit()

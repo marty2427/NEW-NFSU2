@@ -369,6 +369,14 @@ func big_text(text: String, font_key: String, pos: Vector3, yaw_deg: float, pixe
 	root.add_child(light)
 
 
+## Cedule se vykresluji jen do dane vzdalenosti (velke mesto = hodne cedul).
+func set_view_distance(dist: float) -> void:
+	for node in find_children("*", "GeometryInstance3D", true, false):
+		var gi := node as GeometryInstance3D
+		gi.visibility_range_end = dist
+		gi.visibility_range_end_margin = 20.0
+
+
 # ---------------------------------------------------------------------
 #  Animace: blikani a bezici svetlo
 # ---------------------------------------------------------------------
