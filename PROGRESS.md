@@ -131,6 +131,16 @@
   převod v šikmém rámečku, nitro jako řada šikmých dílků. Číslice rovné (písmo Oxanium).
 - Načtení hry trvá o ~6–8 s déle (staví se město). Kdyby vadilo → uložit postavené město do souboru.
 
+## Oprava po 6. kole: hra po aktualizaci nenaběhla (nahlásil hráč)
+- **Příčina:** `HRAT.bat` spouštěl přípravu Godotu (`--import`) jen úplně poprvé. Po aktualizaci s novými skripty
+  (třídy `CityMap`, `Minimap`, `BigMap`) a novými zvuky/písmem tak zůstal starý seznam tříd v `.godot/`,
+  hlavní skript se nepřeložil a otevřelo se jen prázdné okno. Zopakováno v cloudu (stará verze → nová bez importu).
+- **Oprava:** `HRAT.bat` si pamatuje označení poslední stažené verze (`.git\FETCH_HEAD` → `.godot\nw_verze.txt`)
+  a po každé aktualizaci spustí `--headless --import` (pár vteřin). Hra navíc zapisuje záznam do `hra_log.txt`
+  (když něco nepůjde, hráč ho pošle) a při startu ukáže obrazovku „stavím město“ (stavba města: 3–5 s v cloudu).
+- **Poučení:** po každé změně, která přidá třídu (`class_name`) nebo soubor k importu, je nutný import – řeší to HRAT.bat.
+  .bat soubory pořád nejdou v cloudu spustit (jen Linux) – čeká na potvrzení hráče.
+
 ## Co je hotovo
 - **Auta** (`scripts/car/car.gd`, `car_model.gd`): 3D modely .glb, nastavení modelů v `data/modely_aut.cfg`
   (kola, materiály, světla, díly pro demolici, opravy modelu). Lak s clearcoatem, brzdová světla, reflektory se stínem.

@@ -16,6 +16,11 @@ var _sky_night: Sky
 
 
 func _ready() -> void:
+	# Uvodni obrazovka: stavba mesta trva nekolik vterin, hrac ma videt, ze hra bezi
+	var loading := _loading_screen()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var t0 := Time.get_ticks_msec()
 	_build_environment()
 	city = CityBuilder.new()
 	city.name = "Mapa"
@@ -28,6 +33,8 @@ func _ready() -> void:
 	_spawn_player()
 	_apply_daylight(Hra.daylight)
 	Hra.daylight_changed.connect(_apply_daylight)
+	print("[START] mesto postaveno za %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
+	loading.queue_free()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--snapshot="):
 			add_child(load("res://scripts/dev/snapshot.gd").new())
@@ -39,6 +46,29 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap=") or arg.begins_with("--walltest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
+
+
+func _loading_screen() -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.02, 0.05)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(bg)
+	var box := VBoxContainer.new()
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	layer.add_child(box)
+	for item in [["NEON WRECK", 96, Color(0.15, 0.85, 1.0)], ["stavím město…  (10 až 20 vteřin)", 30, Color(0.9, 0.92, 1.0)]]:
+		var label := Label.new()
+		label.text = item[0]
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_override("font", load("res://assets/fonts/RussoOne-Regular.ttf"))
+		label.add_theme_font_size_override("font_size", item[1])
+		label.add_theme_color_override("font_color", item[2])
+		box.add_child(label)
+	return layer
 
 
 func _make_circuit() -> void:
@@ -107,6 +137,8 @@ func _respawn_here(id: String) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if car == null or hud == null:
+		return      # hra se jeste nacita
 	var cars := CarTuning.list_cars()
 	for i in 3:
 		if event.is_action_pressed("auto_%d" % (i + 1)) and i < cars.size():

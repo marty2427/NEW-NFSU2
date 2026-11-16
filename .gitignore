@@ -10,3 +10,5 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+# Zaznam posledniho spusteni hry
+hra_log.txt

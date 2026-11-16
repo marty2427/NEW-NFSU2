@@ -28,6 +28,7 @@ rem Cely zbytek je v jednom bloku: soubor se behem aktualizace muze prepsat sam.
   git reset -q --hard FETCH_HEAD
   echo.
   echo HOTOVO - hra je aktualni. Spust ji souborem HRAT.bat
+  echo Prvni spusteni po aktualizaci trva o chvili dele - hra se pripravuje.
   echo.
   pause
   exit /b 0
