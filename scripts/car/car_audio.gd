@@ -1,25 +1,31 @@
 class_name CarAudio
 extends Node
-## Zvuky auta: motor (dve vrstvy podle otacek), kvileni pneumatik, nitro, vitr,
-## narazy, preraeni a odfuk turba. Vsechny zvuky jsou synteticke (tools/generuj_zvuky.py).
+## Zvuky auta: motor (smycky v ruznych otackach, zvlast pod plynem a bez plynu, plynule
+## se prolinaji), hvizd turba, kvileni pneumatik, nitro, vitr, narazy, preraeni a odfuk turba.
+## Vsechny zvuky jsou synteticke (tools/generuj_zvuky.py + tools/motor_synth.py).
 ## Funguje s Car i GevpCar (cte jen rpm, plyn, rychlost, smyk, nitro).
 
 const DIR := "res://assets/sounds/"
-## typ motoru -> [soubor nizke otacky, jeho referencni otacky, soubor vysoke otacky, referencni otacky]
+## typ motoru -> otacky, pro ktere existuji smycky (pod plynem / bez plynu); musi sedet s tools/motor_synth.py
 const ENGINES := {
-	"r4": ["motor_r4_nizky.wav", 2500.0, "motor_r4_vysoky.wav", 5500.0],
-	"v8": ["motor_v8_nizky.wav", 2000.0, "motor_v8_vysoky.wav", 4500.0],
+	"r4": {"plyn": [1000, 2200, 3600, 5000, 6600], "volno": [900, 3200, 6000], "turbo": true},
+	"r4s": {"plyn": [1100, 2400, 3900, 5500, 7100], "volno": [1000, 3500, 6500], "turbo": true},
+	"v8": {"plyn": [800, 1900, 3100, 4500, 6000], "volno": [750, 2800, 5500], "turbo": false},
 }
+const ENGINE_GAIN := 0.8
 
 var car: Node
-var _low: AudioStreamPlayer
-var _high: AudioStreamPlayer
+var _on: Array[AudioStreamPlayer] = []     # smycky pod plynem
+var _off: Array[AudioStreamPlayer] = []    # smycky bez plynu
+var _on_rpm: Array = []
+var _off_rpm: Array = []
+var _whistle: AudioStreamPlayer
+var _boost := 0.0
 var _skid: AudioStreamPlayer
 var _nitro: AudioStreamPlayer
 var _wind: AudioStreamPlayer
 var _scrape: AudioStreamPlayer
 var _one_shots: Array[AudioStreamPlayer] = []
-var _refs := [2500.0, 5500.0]
 var _load := 0.0
 var _last_gear := 1
 var _was_throttle := 0.0
@@ -30,11 +36,18 @@ var _turbo := true
 func _ready() -> void:
 	car = get_parent()
 	var kind: String = car.t.zvuk_motoru if car.get("t") else "r4"
-	var e: Array = ENGINES.get(kind, ENGINES["r4"])
-	_refs = [e[1], e[3]]
-	_turbo = kind != "v8"
-	_low = _loop(e[0], -80.0)
-	_high = _loop(e[2], -80.0)
+	if not ENGINES.has(kind):
+		kind = "r4"
+	var e: Dictionary = ENGINES[kind]
+	_turbo = e.turbo
+	_on_rpm = e.plyn
+	_off_rpm = e.volno
+	for r in _on_rpm:
+		_on.append(_loop("motor_%s_plyn_%d.wav" % [kind, r], -80.0))
+	for r in _off_rpm:
+		_off.append(_loop("motor_%s_volno_%d.wav" % [kind, r], -80.0))
+	if _turbo:
+		_whistle = _loop("turbo_hvizd.wav", -80.0)
 	_skid = _loop("pneumatiky.wav", -80.0)
 	_nitro = _loop("nitro.wav", -80.0)
 	_wind = _loop("vitr.wav", -80.0)
@@ -77,6 +90,28 @@ func _play(file: String, volume_db: float, pitch: float) -> void:
 			return
 
 
+## Prolnuti dvou sousednich smycek podle otacek; kazda se preladi na aktualni otacky.
+func _mix_layers(players: Array[AudioStreamPlayer], refs: Array, rpm: float, gain: float) -> void:
+	var n := players.size()
+	var seg := 0
+	while seg < n - 2 and rpm > float(refs[seg + 1]):
+		seg += 1
+	var f := clampf((rpm - float(refs[seg])) / (float(refs[seg + 1]) - float(refs[seg])), 0.0, 1.0)
+	for i in n:
+		var p := players[i]
+		var g := 0.0
+		if i == seg:
+			g = cos(f * PI * 0.5)
+		elif i == seg + 1:
+			g = sin(f * PI * 0.5)
+		if g * gain < 0.002:
+			p.stream_paused = true
+			continue
+		p.stream_paused = false
+		p.pitch_scale = clampf(rpm / float(refs[i]), 0.5, 1.8)
+		p.volume_db = _db(g * gain)
+
+
 static func _db(linear: float) -> float:
 	return linear_to_db(maxf(linear, 0.0001))
 
@@ -97,17 +132,18 @@ func _process(delta: float) -> void:
 	var speed: float = car.speed_kmh
 	var dead: bool = car.destroyed
 
-	# --- Motor: pod plynem hlasity a ostry, bez plynu tlumeny ---
-	_load = lerpf(_load, throttle, 1.0 - exp(-12.0 * delta))
+	# --- Motor: pod plynem hlasity a ostry, bez plynu tlumeny a bublavy ---
+	_load = lerpf(_load, throttle, 1.0 - exp(-14.0 * delta))
 	var x := clampf((rpm - 900.0) / (redline - 900.0), 0.0, 1.0)
-	var mix := smoothstep(0.25, 0.75, x)                     # 0 = nizka vrstva, 1 = vysoka
-	var gain := (0.35 + 0.65 * _load) * (0.75 + 0.25 * x)
-	if dead:
-		gain = 0.0
-	_low.pitch_scale = clampf(rpm / _refs[0], 0.35, 3.0)
-	_high.pitch_scale = clampf(rpm / _refs[1], 0.35, 2.5)
-	_low.volume_db = _db(gain * cos(mix * PI * 0.5) * 0.42)
-	_high.volume_db = _db(gain * sin(mix * PI * 0.5) * 0.38)
+	var master := 0.0 if dead else ENGINE_GAIN
+	_mix_layers(_on, _on_rpm, rpm, master * sqrt(_load) * (0.55 + 0.45 * x))
+	_mix_layers(_off, _off_rpm, rpm, master * sqrt(1.0 - _load) * (0.42 + 0.25 * x))
+	if _whistle:
+		# Turbo se roztaci s plynem a otackami, po ubrani plynu dobiha
+		var target := throttle * smoothstep(0.25, 0.7, x)
+		_boost = lerpf(_boost, target, 1.0 - exp(-(2.5 if target > _boost else 5.0) * delta))
+		_whistle.volume_db = _db(0.0 if dead else _boost * 0.11)
+		_whistle.pitch_scale = 0.55 + 0.6 * _boost + 0.15 * x
 
 	# --- Preraeni a odfuk turba ---
 	var gear: int = car.gear

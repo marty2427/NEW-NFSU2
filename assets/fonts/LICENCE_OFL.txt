@@ -1142,3 +1142,9 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
+
+
+===== Oxanium.ttf (https://fonts.google.com/specimen/Oxanium) =====
+Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium)
+This Font Software is licensed under the SIL Open Font License, Version 1.1
+(full text of the licence above; also at https://scripts.sil.org/OFL).

@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (4. kolo – nové jádro řízení, okruh, zvuky, aktualizace jedním kliknutím): HOTOVO, čeká na otestování hráčem.**
+**Fáze 1b (5. kolo – velké město s nepravidelnými ulicemi, městský okruh 3,7 km, minimapa, nový tachometr, nový zvuk motoru): HOTOVO, čeká na otestování hráčem.**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -85,6 +85,28 @@
   `HRAT.bat` spustí hru přímo bez editoru.
 - Varianty F7: ARKÁDA (výchozí), SPORT, DRIFT násobí hodnoty auta (`x_...` v auta.cfg); EVP = převzaté řízení.
 
+## 5. kolo – velké město, okruh, zvuk motoru, tachometr (přání hráče)
+- **Velké město** (`scripts/world/city_map.gd` = plán, `city_builder.gd` = stavba): graf ulic místo mřížky –
+  22 křižovatek, 42 ulic, 16 km silnic, průměr ~1,7 km. Okružní bulvár (široký, plynulé oblouky), vnitřní okruh,
+  paprsky, centrum s úhlopříčkami (nepravidelné úhly, vlásenky až 124°). ~1800 domů (dvě řady, v centru věžáky),
+  ~315 lamp, ~680 cedulí. Zdi podél ulic jsou jedna souvislá kolize (auto se neodráží o spáry).
+  Úprava plánu: stačí změnit `NODES` / `EDGES` v city_map.gd; kontrola `godot --headless --path . -s res://scripts/dev/map_check.gd`.
+- **Tréninková plocha**: blok bez domů (~58 000 m²) severozápadně od centra – rampy, kontejnery, sudy, sklad „NITRO GARÁŽ“.
+- **Městský okruh** (`circuit.gd`): 3,7 km, 10 křižovatek (bulvár → vnitřní okruh → centrum → zpět), svítící šipky,
+  brána START/CÍL, průjezdní body. Auto začíná na startu; T = zpět na start.
+- **Minimapa** (`scripts/ui/minimap.gd`) vlevo dole: natáčí se podle auta, okruh azurově, zelená tečka = kam jet.
+- **Počítačový jezdec** má závodní stopu (`Circuit.racing_line()`: zatáčky najíždí zvenku, poloměr podle šířky ulice).
+  Naměřeno (g = 1,5, klávesnicové řízení): Octavia 1:43, Mustang 1:41, Silvia 1:41, 0 nárazů, zatáčky od 63 km/h, max ~205 km/h.
+- **Tachometr přepracován** (`scripts/ui/tachometer.gd`): moderní digitální přístrojovka, písmo Oxanium, rovné číslice,
+  svítící oblouk otáček, uprostřed rychlost, dole převod (zeleně = přeřaď), vpravo modrý oblouk N2O. Budík turba zrušen.
+- **Zvuk motoru znovu** (`tools/motor_synth.py`): model výfukových pulsů → svody → potrubí → tlumič + šum sání a mechaniky.
+  3 motory: `r4` (Octavia, kultivovaný), `r4s` (Silvia, chraplavý, praská do výfuku), `v8` (Mustang, bublavý).
+  Pro každý 5 smyček pod plynem + 3 bez plynu, hra mezi nimi prolíná (malé přelaďování = přirozenější), hvizd turba.
+  Volně dostupné nahrávky (OpenGameArt, CC0) jsem zkoušel – jen hluboké bručení, nepoužitelné.
+  Starý zvuk měl 95 % energie v pásmu 80–200 Hz (proto zněl jako bzučení), nový má harmonické do ~2–4 kHz.
+  Pozor: pořád nešlo poslechnout, jen změřit. Když nebude stačit → skutečné nahrávky přes Cowork (např. Freesound).
+- Ve dne okna a výlohy svítí jen slabě (v noci naplno).
+
 ## Co je hotovo
 - **Auta** (`scripts/car/car.gd`, `car_model.gd`): 3D modely .glb, nastavení modelů v `data/modely_aut.cfg`
   (kola, materiály, světla, díly pro demolici, opravy modelu). Lak s clearcoatem, brzdová světla, reflektory se stínem.
@@ -94,12 +116,11 @@
 - Naměřeno (bez nitra): Octavia 0–100 za 5,1 s, Mustang 4,6 s, Silvia 4,7 s; 0–200 za 19–22 s.
 - **Ladění jízdy**: `tuning/auta.cfg` (česky okomentované), F6 = znovu načíst.
 - **Poškození**: práh ~7 m/s, násobek 0.6 / odolnost; kouř od 50 %, černý kouř od 75 %, oheň od 90 %, výbuch 100 %.
-- **Mapa** (`scripts/world/test_city.gd`, `city_builder.gd`): městská čtvrť 4×4 bloky (ulice po 90 m, vozovka 16 m,
-  chodníky s obrubníkem), budovy s texturami, okny a výlohami, neonové nápisy, reklamy na střechách,
-  ~190 pouličních lamp (MultiMesh + spot světla s dosahem podle kvality), parkoviště 210×220 m se sklady,
-  kontejnery, rampami, zábranami, sudy a bednami. Silnice: jeden shader s vodorovným značením a kalužemi.
+- **Mapa**: viz 5. kolo výše (velké město z grafu ulic). Budovy s texturami, okny a výlohami (jeden shader,
+  hodnoty na dům), neonové nápisy, reklamy na střechách, lampy (MultiMesh + světla s dosahem podle kvality).
+  Silnice: jeden mesh a shader s vodorovným značením a kalužemi.
 - **Kamera**: nízko za autem, při zrychlení zaostává, v rychlosti se vzdálí a chvěje, FOV roste, nitro přidá.
-- **HUD**: kulatý otáčkoměr + tachometr + stupeň + nitro (vpravo dole), body za drift, název auta, FPS.
+- **HUD**: digitální přístrojovka (vpravo dole), minimapa (vlevo dole), čas kola, body za drift, název auta, FPS.
 - **Efekty**: radiální rozmazání v rychlosti, čáry při nitru, modré plameny z výfuku, kouř pneumatik, jiskry, výbuch.
 - **Grafika**: Forward+, SDFGI, objemová mlha, SSR, SSAO/SSIL, bloom; předvolby NÍZKÁ–ULTRA (F5).
 
@@ -118,20 +139,26 @@
 - Silvia: model je „výstavní“, dveře a kapota se zavírají v kódu (`transformace`, `reset_deti` v modely_aut.cfg).
 - Promáčkliny karoserie a odpadávání dílů během jízdy – fáze 2 (díly jsou už v modelech označené).
 - Skutečný motion blur (Compositor efekt) zvážit ve fázi 7.
-- Výkon na PC Monster ověřit (hodně světel + objemová mlha); případně snížit dosah lamp v `graphics.gd`.
+- Výkon na PC Monster ověřit na novém městě (1800 domů, víc cedulí a lamp); případně zkrátit dohled cedulí
+  (`signs.set_view_distance`) a dosah lamp v `graphics.gd`, nebo domy sloučit do MultiMesh.
+- Okolí za městem je prázdná rovina (z ulic není vidět, jen z výšky).
+- Zatím bez provozu, chodců a bez výškových rozdílů (mosty, tunely) – nápad do fáze 5.
 
 ## Další krok
-- Počkat na zpětnou vazbu k fázi 1b, opravit chyby, pak fáze 2.
+- Počkat na zpětnou vazbu k 5. kolu (mapa, okruh, zvuk, tachometr, řízení), opravit chyby, pak fáze 2.
 
 ## Vývojářské poznámky
 - Automatický test: `godot --path . -- --autotest [--shots=SLOZKA] [--rychle]`
 - Test řízení: `godot --headless --path . -- [--profil=arkada|sport|drift|gevp] --handlingtest=octavia`
-- Test okruhu s počítačovým jezdcem: `godot --headless --path . -- --lap=octavia --g=1.5` (`--analog` = plynulý volant, `LAPDEBUG=1` = podrobný výpis)
-- Zvuky znovu vygenerovat: `python3 tools/generuj_zvuky.py` (numpy, scipy)
+- Test okruhu s počítačovým jezdcem: `godot --headless --fixed-fps 120 --path . -- --lap=octavia --g=1.5`
+  (`--fixed-fps` = běží rychleji než skutečný čas, `--analog` = plynulý volant, `--r=2` = odstup od obrubníku, `LAPDEBUG=1` = podrobný výpis)
+- Kontrola plánu města: `godot --headless --path . -s res://scripts/dev/map_check.gd`; počty: `-- --statistika`
+- Zvuky znovu vygenerovat: `python3 tools/generuj_zvuky.py` (numpy, scipy); motor se ladí v `tools/motor_synth.py` (slovník ENGINES),
+  otáčky smyček musí sedět s tabulkou v `scripts/car/car_audio.gd`
 - Nahrávka se zvukem: `godot --path . --write-movie slozka/f.png --fixed-fps 20 -- --kvalita=0 --lap=mustang`
 - Noc místo dne: přidat `--noc`
 - Měření zrychlení: `godot --headless --path . -- --speedtest=octavia`
 - Prohlížeč modelu: `godot --path . res://scenes/dev/model_viewer.tscn -- --view=res://cesta.glb --out=/slozka/prefix`
   nebo s `--car=octavia` (hotové auto).
-- Snímek auta z boku: `godot --path . -- --snapshot=soubor.png`
+- Snímky města: `godot --path . -- --snapshot=SLOZKA [--pohledy=mapa,start,plocha,okruh0..7] [--tacho=otacky,rychlost,nitro] [--noc]`
 - Ladicí klávesa K = +25 % poškození.

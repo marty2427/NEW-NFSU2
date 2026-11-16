@@ -111,7 +111,7 @@ var _wall_angle := -1.0
 func _wall_test(t: float, car) -> void:
 	if t > 0.2 and _once("wallset"):
 		var basis := Basis(Vector3.UP, PI * 0.5 - deg_to_rad(_wall_angle))
-		arena.spawn_car("octavia", Transform3D(basis, Vector3(60, 0.5, -6)))
+		arena.spawn_car("octavia", Transform3D(basis, Vector3(180, 0.5, -386)))   # rovna ulice I1-I2, zed je na z = -392.5
 		arena.car.impact.connect(func(_c, dv, pos): print("[WALL] naraz dv=%.1f v miste (%.1f, %.2f, %.1f)" % [dv, pos.x, pos.y, pos.z]))
 		return
 	if t > 1.2 and _once("wallgo"):
@@ -234,7 +234,7 @@ func _physics_process(delta: float) -> void:
 		print("[AUTOTEST] vybuch, destroyed=", car.destroyed)
 	if t > 21.0 and _once("crash"):
 		print("[AUTOTEST] test narazu do steny 30 m/s, poskozeni pred: ", car.damage)
-		car.teleport(Transform3D(Basis(), Vector3(0, 1.0, -70)))
+		car.teleport(Transform3D(Basis(), Vector3(60, 1.0, -380)))
 	if t > 21.3 and _once("crash_vel"):
 		car.linear_velocity = Vector3(0, 0, -30)
 	if t > 23.0 and _once("crash_res"):

@@ -36,14 +36,15 @@ a materiály a u Silvie se zavírají otevřené dveře a kapota (úprava za bě
 - Šum pro kaluže generuje Godot (FastNoiseLite) za běhu.
 
 ## Zvuky (`assets/sounds/`) – vlastní práce projektu
-- Všechny zvuky jsou syntetické, vygenerované skriptem `tools/generuj_zvuky.py` (žádné nahrávky).
+- Všechny zvuky jsou syntetické, vygenerované skripty `tools/generuj_zvuky.py` a `tools/motor_synth.py` (žádné nahrávky).
 - Hudba zatím žádná.
 
 ## Písma (`assets/fonts/`) – licence SIL Open Font License 1.1
 Google Fonts (https://fonts.google.com), plný text licencí v `assets/fonts/LICENCE_OFL.txt`:
 - Monoton, Tilt Neon, Neonderthaw, Pacifico, Bebas Neue, Bungee, Bungee Shade, Righteous,
   Audiowide, Kaushan Script, Saira Stencil One, Russo One
-- HUD používá Russo One a Audiowide; neonové cedule všechna uvedená písma.
+- Oxanium – Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium), SIL OFL 1.1
+- HUD používá Russo One; tachometr a minimapa Oxanium; neonové cedule ostatní uvedená písma.
 
 ## Názvy a značky
 - Hra je soukromý projekt, nebude se šířit. Skutečná auta (Škoda, Nissan, Ford) jsou použita

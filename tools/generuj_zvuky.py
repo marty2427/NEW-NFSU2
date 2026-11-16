@@ -2,6 +2,7 @@
 """Vygeneruje vsechny zvuky hry (motor, pneumatiky, nitro, vitr, narazy) do assets/sounds.
 
 Zvuky jsou cele synteticke (zadne nahravky), takze jsou vlastni praci projektu.
+Motor pocita tools/motor_synth.py (model vyfukovych pulsu, potrubi a tlumice).
 Spusteni:  python3 tools/generuj_zvuky.py
 Potrebuje: numpy, scipy
 """
@@ -10,14 +11,18 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import butter, sosfilt, sosfiltfilt
 
+import motor_synth
+
 SR = 44100
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "sounds")
 rng = np.random.default_rng(2427)
 
 
 def save(name, x, peak=0.9):
+    """peak=None: hlasitost se nemeni (smycky motoru maji uz srovnanou stredni uroven)."""
     x = np.asarray(x, dtype=np.float64)
-    x = x / (np.max(np.abs(x)) + 1e-9) * peak
+    if peak is not None:
+        x = x / (np.max(np.abs(x)) + 1e-9) * peak
     wavfile.write(os.path.join(OUT, name), SR, (x * 32767).astype(np.int16))
     print(f"{name:22s} {len(x) / SR:5.2f} s  rms={np.sqrt(np.mean(x ** 2)):.3f}")
 
@@ -45,40 +50,6 @@ def loopable_noise(seconds, shaper):
     return out
 
 
-def engine_loop(firing_hz, cylinders, uneven, brightness, cycles=12):
-    """Smycka motoru. Jeden cyklus motoru = `cylinders` zazehu; kazdy zazeh je kratky tlumeny puls.
-
-    firing_hz  - frekvence zazehu (4valec pri 3000 ot/min = 100 Hz)
-    uneven     - nepravidelnost zazehu (V8 "bublani")
-    brightness - kolik vyssich tonu (vyssi otacky = ostrejsi zvuk)
-    """
-    n = int(round(SR / firing_hz * cylinders * cycles))
-    period = n / (cylinders * cycles)            # vzorku na jeden zazeh (upraveno, aby smycka presne navazovala)
-    firing_hz = SR / period
-    t = np.arange(n)
-    x = np.zeros(n)
-    offsets = np.linspace(0.0, 1.0, cylinders, endpoint=False)
-    offsets = offsets + uneven * np.array([0.0, 0.35, -0.2, 0.3, -0.1, 0.25, -0.3, 0.1][:cylinders]) / cylinders
-    amps = 1.0 + 0.25 * np.array([0.0, -0.6, 0.4, -0.3, 0.7, -0.5, 0.2, -0.8][:cylinders])
-    cycle_len = period * cylinders
-    for c in range(cylinders):
-        phase = (t / cycle_len - offsets[c]) % 1.0            # 0..1 v ramci cyklu motoru
-        tt = phase * cycle_len / SR                           # cas od zazehu (s)
-        # vyfukovy puls: rychly nabeh, tlumene doznivani s rezonanci vyfuku
-        pulse = np.exp(-tt * firing_hz * 2.2) * np.sin(2 * np.pi * firing_hz * 1.0 * tt + 0.3)
-        pulse += 0.5 * np.exp(-tt * firing_hz * 3.0) * np.sin(2 * np.pi * firing_hz * 2.02 * tt)
-        pulse += brightness * 0.35 * np.exp(-tt * firing_hz * 4.0) * np.sin(2 * np.pi * firing_hz * 3.97 * tt)
-        pulse += brightness * 0.2 * np.exp(-tt * firing_hz * 5.0) * np.sin(2 * np.pi * firing_hz * 6.1 * tt)
-        x += amps[c] * pulse
-    # mechanicky sum (sani, rozvody) modulovany zazehy
-    noise = loopable_noise(n / SR, lambda z: bandpass(z, 600, 3500))[:n]
-    mod = 0.6 + 0.4 * np.sin(2 * np.pi * (t / period))
-    x += noise * mod * 0.10 * (0.5 + brightness) * np.max(np.abs(x)) * 0.5
-    x = lowpass(np.tile(x, 3), 1800 + 5000 * brightness)       # trikrat za sebou = filtry jsou ustalene, smycka sedi
-    x = highpass(x, 25)[2 * n:]                                 # bez stejnosmerne slozky
-    return np.tanh(x / np.max(np.abs(x)) * 1.6)                 # lehke zkresleni = plnejsi zvuk
-
-
 def impact(seconds, thud_hz, crunch):
     n = int(seconds * SR)
     t = np.arange(n) / SR
@@ -93,13 +64,17 @@ def impact(seconds, thud_hz, crunch):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    # --- Motory: dve vrstvy (nizke a vysoke otacky), hra mezi nimi prolina a meni vysku tonu ---
-    # Radovy ctyrvalec (Octavia, Silvia): referencni otacky 2500 a 5500 ot/min
-    save("motor_r4_nizky.wav", engine_loop(2500 / 60 * 2, 4, 0.0, 0.25))
-    save("motor_r4_vysoky.wav", engine_loop(5500 / 60 * 2, 4, 0.0, 0.9))
-    # V8 (Mustang): nepravidelne zazehy = bublavy zvuk; reference 2000 a 4500 ot/min
-    save("motor_v8_nizky.wav", engine_loop(2000 / 60 * 4, 8, 1.0, 0.2))
-    save("motor_v8_vysoky.wav", engine_loop(4500 / 60 * 4, 8, 0.8, 0.8))
+    # --- Motory: pro kazdy typ nekolik smycek v ruznych otackach, zvlast pod plynem a bez plynu.
+    #     Hra mezi sousednimi smyckami prolina a jen malo meni vysku tonu (zni to prirozeneji).
+    for old in os.listdir(OUT):
+        if old.startswith("motor_") and old.endswith(".wav"):
+            os.remove(os.path.join(OUT, old))
+    for kind, spec in motor_synth.ENGINES.items():
+        for rpm in spec["rpm_on"]:
+            save(f"motor_{kind}_plyn_{rpm}.wav", motor_synth.engine_loop(kind, rpm, 1.0), None)
+        for rpm in spec["rpm_off"]:
+            save(f"motor_{kind}_volno_{rpm}.wav", motor_synth.engine_loop(kind, rpm, 0.0), None)
+    save("turbo_hvizd.wav", motor_synth.turbo_whistle(), 0.5)
 
     # --- Kvileni pneumatik: uzkopasmovy sum s kolisanim ---
     def squeal(x):
