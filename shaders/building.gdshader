@@ -1,27 +1,36 @@
 shader_type spatial;
 // Fasada budovy: textura (beton, cihly, oblozeni), okna s nahodne rozsvicenymi
 // mistnostmi a v prizemi osvetlene vylohy obchodu. Pocita se v souradnicich budovy,
-// takze funguje i pro domy natocene v libovolnem uhlu. Hodnoty "instance" ma kazdy dum jine.
+// takze funguje i pro domy natocene v libovolnem uhlu.
 
 uniform sampler2D wall_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D wall_normal : hint_normal, filter_linear_mipmap, repeat_enable;
-instance uniform vec3 wall_tint : source_color = vec3(1.0);
 uniform float wall_scale = 0.25;         // opakovani textury (1/m)
-instance uniform float seed = 0.0;
-instance uniform float lit_ratio = 0.35;
-instance uniform float half_height = 10.0;   // polovina vysky domu (stred kvadru je v pulce)
-instance uniform vec2 cell = vec2(3.2, 3.6);      // rozestup oken (sirka, vyska patra)
 uniform float window_energy = 1.3;
 uniform float shop_height = 4.6;         // vyska prizemi s vylohami
 uniform float shop_energy = 0.9;
-instance uniform vec3 shop_color : source_color = vec3(1.0, 0.8, 0.55);
 
+// Domy se kresli hromadne (MultiMesh): jednotkova krychle roztazena na rozmer domu.
+// Barva instance = odstin zdi (rgb) + podil rozsvicenych oken (a),
+// vlastni data = nahodne cislo domu (x), rozestup oken (y, z), barva vyloh (w).
 varying vec3 wpos;
 varying vec3 wnorm;
+varying flat vec3 wall_tint;
+varying flat float seed;
+varying flat float lit_ratio;
+varying flat vec2 cell;
+varying flat vec3 shop_color;
 
 void vertex() {
-	wpos = VERTEX + vec3(0.0, half_height, 0.0);   // vyska nad zemi
+	vec3 size = vec3(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz), length(MODEL_MATRIX[2].xyz));
+	wpos = VERTEX * size + vec3(0.0, size.y * 0.5, 0.0);   // metry, vyska nad zemi
 	wnorm = NORMAL;
+	wall_tint = COLOR.rgb;
+	lit_ratio = COLOR.a;
+	seed = INSTANCE_CUSTOM.x;
+	cell = INSTANCE_CUSTOM.yz;
+	float pick = INSTANCE_CUSTOM.w;
+	shop_color = pick < 0.34 ? vec3(1.0, 0.8, 0.55) : (pick < 0.67 ? vec3(0.8, 0.9, 1.0) : vec3(1.0, 0.65, 0.4));
 }
 
 float hash(vec2 p) {

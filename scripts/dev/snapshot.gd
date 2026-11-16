@@ -22,11 +22,16 @@ func _ready() -> void:
 	var arena := get_parent()
 	var st: Transform3D = arena.circuit.grid_transform()
 	var lot := Vector3.ZERO
-	for p in arena.city.map.lot_polygon(0.0):
-		lot += CityMap.to3(p)
-	lot /= float(arena.city.map.lot_polygon(0.0).size())
+	for l: Dictionary in arena.city.map.lots:
+		if l.typ == "trenink":
+			lot = CityMap.to3(l.stred)
+			break
 	var all := [
-		["mapa", Vector3(0, 1750, 1), Vector3(0, 0, 0), true],
+		["mapa", Vector3(0, 5200, 1), Vector3(0, 0, 0), true],
+		["reka", Vector3(250, 60, 520), Vector3(-200, 0, 250), false],
+		["stare", Vector3(150, 120, 150), Vector3(-50, 0, -80), false],
+		["mrizka", Vector3(700, 220, -350), Vector3(1100, 0, -800), false],
+		["dalnice", CityMap.to3(arena.city.map.polylines[arena.city.map.circuits[2].ulice[0][0]][3], 3.0), CityMap.to3(arena.city.map.polylines[arena.city.map.circuits[2].ulice[0][0]][8], 3.0), false],
 		["start", st.origin + st.basis * Vector3(0.5, 2.2, 7.5), st.origin + st.basis * Vector3(0, 0.6, -20), false],
 		["plocha", lot + Vector3(120, 90, 160), lot, false],
 		["centrum_vyska", Vector3(20, 160, 200), Vector3(20, 0, 10), false],
@@ -69,10 +74,12 @@ func _process(_delta: float) -> void:
 		get_tree().quit()
 		return
 	var v: Array = _views[_index]
-	cam.far = 6000.0
+	cam.far = 9000.0
 	cam.fov = 60.0
 	cam.global_position = v[1]
 	cam.look_at(v[2], Vector3.UP)
+	if _frames == 0:
+		arena.city.load_around(v[1] if not v[3] else Vector3(0, 0, 9e6))
 	var env: Environment = arena.world_env.environment
 	env.fog_enabled = not v[3] and env.fog_enabled
 	if v[3]:

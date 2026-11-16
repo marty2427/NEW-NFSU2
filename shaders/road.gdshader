@@ -47,7 +47,7 @@ void fragment() {
 			if (half_w > 9.5) {
 				white += band(a, half_w * 0.36, 0.07) * dashes;
 				white += band(a, half_w * 0.68, 0.07) * dashes;
-			} else {
+			} else if (half_w > 7.0) {
 				white += band(a, half_w * 0.5, 0.07) * dashes;
 			}
 			white += band(a, half_w - 0.45, 0.08);

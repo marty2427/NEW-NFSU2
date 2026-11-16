@@ -9,8 +9,12 @@ signal checkpoint_passed(index: int, total: int)
 const GATE_RADIUS := 26.0
 
 var map: CityMap
+var index := 0                          # ktery okruh z planu mesta
+var title := ""
+var length := 0.0
 var route := PackedVector3Array()       # osa okruhu (uzavrena lomena cara)
 var checkpoints := PackedVector3Array() # krizovatky okruhu v poradi jizdy
+var edge_set := {}                      # ulice okruhu (pro minimapu)
 var start_xf := Transform3D()
 var car: Node3D
 var lap_time := 0.0
@@ -21,23 +25,54 @@ var running := false
 var next_cp := 0
 
 var _markers: Array[Node3D] = []
+var _items: Array = []                  # [[ulice, vpred]]
+var _grid_xf := Transform3D()
 
 
-func setup(city_map: CityMap) -> void:
+func setup(city_map: CityMap, circuit_index := 0) -> void:
 	map = city_map
-	for p in map.circuit_polyline():
+	index = circuit_index
+	var info: Dictionary = map.circuits[index]
+	title = info.nazev
+	length = info.delka
+	_items = info.ulice
+	for p in map.circuit_polyline(index):
 		route.append(CityMap.to3(p))
-	for id in CityMap.CIRCUIT:
-		checkpoints.append(CityMap.to3(CityMap.NODES[id]))
-	# Start: na prvnim useku, 60 m za prvni krizovatkou
-	var e := map.find_edge(CityMap.CIRCUIT[0], CityMap.CIRCUIT[1])
+	for item in _items:
+		edge_set[item[0]] = true
+		checkpoints.append(CityMap.to3(map.nodes[_from_node(item)]))
+	# Start: na prvnim useku kousek za prvni krizovatkou
+	var e: int = _items[0][0]
 	var pl := map.polylines[e].duplicate()
-	if CityMap.EDGES[e][0] != CityMap.CIRCUIT[0]:
+	if not _items[0][1]:
 		pl.reverse()
-	var cut := CityMap.cut_polyline(pl, 60.0, 0.0)
-	var dir := (cut[1] - cut[0]).normalized()
-	start_xf = Transform3D(Basis.looking_at(CityMap.to3(dir), Vector3.UP), CityMap.to3(cut[0], 0.6))
+	var total := CityMap.polyline_length(pl)
+	var dist := minf(map.trim[_from_node(_items[0])] + 45.0, total * 0.45)
+	var pd := CityMap.point_at(pl, dist)
+	start_xf = Transform3D(Basis.looking_at(CityMap.to3(pd[1]), Vector3.UP), CityMap.to3(pd[0], 0.6))
+	var gd := CityMap.point_at(pl, maxf(dist - 25.0, map.trim[_from_node(_items[0])] + 2.0))
+	_grid_xf = Transform3D(Basis.looking_at(CityMap.to3(gd[1]), Vector3.UP), CityMap.to3(gd[0], 0.6))
 	_build_visuals(map.half_width[e])
+
+
+func _from_node(item: Array) -> int:
+	return map.edge_a[item[0]] if item[1] else map.edge_b[item[0]]
+
+
+## Smery v krizovatce k: [smer prijezdu, smer odjezdu, sirka].
+func _node_dirs(k: int) -> Array:
+	var n := _items.size()
+	var item_in: Array = _items[posmod(k - 1, n)]
+	var item_out: Array = _items[k]
+	var id := _from_node(item_out)
+	var d_in := Vector2.RIGHT
+	var d_out := Vector2.RIGHT
+	for ne in map.node_edges[id]:
+		if ne.e == item_in[0]:
+			d_in = -ne.out
+		if ne.e == item_out[0]:
+			d_out = ne.out
+	return [d_in, d_out, minf(map.half_width[item_in[0]], map.half_width[item_out[0]]), id]
 
 
 ## Zavodni stopa pro pocitacoveho jezdce: rohy (najizdi se zvenku) a polomer oblouku pro kazdy roh.
@@ -45,36 +80,25 @@ func setup(city_map: CityMap) -> void:
 func racing_line(margin := 2.0) -> Dictionary:
 	var corners := PackedVector3Array()
 	var radii := PackedFloat32Array()
-	var n := CityMap.CIRCUIT.size()
-	# Udaje o kazde krizovatce okruhu
+	var n := _items.size()
 	var info := []
 	for k in n:
-		var id: String = CityMap.CIRCUIT[k]
-		var e_in := map.find_edge(CityMap.CIRCUIT[posmod(k - 1, n)], id)
-		var e_out := map.find_edge(id, CityMap.CIRCUIT[(k + 1) % n])
-		var d_in := Vector2.ZERO
-		var d_out := Vector2.ZERO
-		for ne in map.node_edges[id]:
-			if ne.e == e_in:
-				d_in = -ne.out
-			if ne.e == e_out:
-				d_out = ne.out
+		var nd := _node_dirs(k)
+		var d_in: Vector2 = nd[0]
+		var d_out: Vector2 = nd[1]
+		var w: float = nd[2]
 		var theta := absf(d_in.angle_to(d_out))
-		var w := minf(map.half_width[e_in], map.half_width[e_out])
 		var wide := minf(w - margin - 0.5, 5.0) * clampf(theta / deg_to_rad(60.0), 0.0, 1.0)
 		var radius := clampf((w - margin + wide) / maxf(1.0 - cos(theta * 0.5), 0.001), 8.0, 160.0)
-		var p: Vector2 = CityMap.NODES[id]
+		var p: Vector2 = map.nodes[nd[3]]
 		if theta > 0.05:
 			p -= (d_out - d_in).normalized() * wide / cos(theta * 0.5)
 		info.append({"p": p, "r": radius, "t": radius * tan(theta * 0.5)})
 	for k in n:
-		var a: String = CityMap.CIRCUIT[k]
-		var b: String = CityMap.CIRCUIT[(k + 1) % n]
 		corners.append(CityMap.to3(info[k].p))
 		radii.append(info[k].r)
-		var e := map.find_edge(a, b)
-		var pl := map.polylines[e].duplicate()
-		if CityMap.EDGES[e][0] != a:
+		var pl := map.polylines[_items[k][0]].duplicate()
+		if not _items[k][1]:
 			pl.reverse()
 		# Body oblouku ulice; ty tesne u krizovatek se vynechaji, aby se zatacka dala najet zesiroka
 		var keep_a: float = info[k].t * 1.4 + 10.0
@@ -88,7 +112,7 @@ func racing_line(margin := 2.0) -> Dictionary:
 
 ## Misto pro auto pred startovni carou.
 func grid_transform() -> Transform3D:
-	return Transform3D(start_xf.basis, start_xf.origin + start_xf.basis.z * 25.0)
+	return _grid_xf
 
 
 func _mat(color: Color, energy: float) -> StandardMaterial3D:
@@ -103,23 +127,17 @@ func _mat(color: Color, energy: float) -> StandardMaterial3D:
 
 func _build_visuals(start_half_width: float) -> void:
 	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
-	var n := CityMap.CIRCUIT.size()
+	var n := _items.size()
 	for k in n:
-		var id: String = CityMap.CIRCUIT[k]
-		var e_in := map.find_edge(CityMap.CIRCUIT[posmod(k - 1, n)], id)
-		var e_out := map.find_edge(id, CityMap.CIRCUIT[(k + 1) % n])
-		var d_in := Vector2.ZERO
-		var d_out := Vector2.ZERO
-		for ne in map.node_edges[id]:
-			if ne.e == e_in:
-				d_in = -ne.out
-			if ne.e == e_out:
-				d_out = ne.out
-		var p := CityMap.to3(CityMap.NODES[id])
+		var nd := _node_dirs(k)
+		var d_in: Vector2 = nd[0]
+		var d_out: Vector2 = nd[1]
+		var id: int = nd[3]
+		var p := CityMap.to3(map.nodes[id])
 		var turn := d_in.angle_to(d_out)            # + = doprava (pri pohledu shora)
 		var size: float = map.trim[id] + 6.0
 		# Svitici sipky na vnejsi strane zatacky (bez kolize), celem k prijizdejicimu autu
-		if absf(turn) > deg_to_rad(20.0):
+		if absf(turn) > deg_to_rad(28.0):
 			var board := Node3D.new()
 			add_child(board)
 			board.position = p + CityMap.to3(d_in) * size
@@ -135,6 +153,7 @@ func _build_visuals(start_half_width: float) -> void:
 			label.shaded = false
 			label.double_sided = false
 			label.position = Vector3(0, 2.2, 0)
+			label.visibility_range_end = 450.0
 			board.add_child(label)
 		# Svitici sloupek u krizovatky, kterou ma hrac projet jako dalsi
 		var marker := MeshInstance3D.new()

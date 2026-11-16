@@ -10,6 +10,8 @@ var car: Node:  # Car nebo GevpCar
 			_tacho.car = value
 		if _minimap:
 			_minimap.car = value
+		if _bigmap:
+			_bigmap.car = value
 
 var circuit: Circuit:
 	set(value):
@@ -18,13 +20,18 @@ var circuit: Circuit:
 			circuit.lap_finished.connect(_on_lap_finished)
 		if _minimap:
 			_minimap.circuit = value
+		if _bigmap:
+			_bigmap.circuit = value
 
 var city_map: CityMap:
 	set(value):
 		city_map = value
 		if _minimap:
 			_minimap.city_map = value
+		if _bigmap:
+			_bigmap.city_map = value
 var _minimap: Minimap
+var _bigmap: BigMap
 var _lap_label: Label
 var _lap_flash := 0.0
 var _tacho: Tachometer
@@ -73,7 +80,7 @@ func _ready() -> void:
 
 	# --- Vpravo nahore: cas kola ---
 	_lap_label = _label(root, 30, Color.WHITE)
-	_place(_lap_label, Control.PRESET_TOP_RIGHT, -520, 18, -28, 110)
+	_place(_lap_label, Control.PRESET_TOP_RIGHT, -900, 18, -28, 110)
 	_lap_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_lap_label.add_theme_color_override("font_outline_color", Color(0.05, 0.1, 0.3))
 	_lap_label.add_theme_constant_override("outline_size", 6)
@@ -91,6 +98,13 @@ func _ready() -> void:
 	_minimap.car = car
 	_minimap.circuit = circuit
 	_minimap.city_map = city_map
+
+	# --- Velka mapa (TAB) ---
+	_bigmap = BigMap.new()
+	root.add_child(_bigmap)
+	_bigmap.car = car
+	_bigmap.circuit = circuit
+	_bigmap.city_map = city_map
 
 	# --- Stred: zpravy ---
 	_message = _label(root, 60, Color(1, 0.9, 0.4))
@@ -113,12 +127,13 @@ func _ready() -> void:
 
 	# --- Vlevo dole: ovladani ---
 	_help = _label(root, 16, Color(0.8, 0.83, 0.95, 0.8))
-	_place(_help, Control.PRESET_BOTTOM_LEFT, 262, -210, 1000, -20)
+	_place(_help, Control.PRESET_BOTTOM_LEFT, 262, -230, 1100, -20)
 	_help.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_help.text = "\n".join([
 		"W/S nebo šipky ... plyn / brzda / couvání      A/D ... zatáčení",
 		"MEZERNÍK ... ruční brzda      SHIFT ... nitro      C ... kamera      Q ... pohled vzad",
-		"T ... na start okruhu      R ... postavit auto      1 / 2 / 3 ... změna auta",
+		"TAB ... mapa města      O ... další okruh      T ... na start okruhu      P ... tréninková plocha",
+		"R ... postavit auto      1 / 2 / 3 ... změna auta",
 		"M ... zvuk      F6 ... znovu načíst auta.cfg",
 		"F5 ... kvalita grafiky      F7 ... varianta řízení      F8 ... den / noc      K ... test poškození",
 		"F3 ... FPS      F11 ... celá obrazovka",
@@ -180,6 +195,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_help.visible = not _help.visible
 	elif event.is_action_pressed("fps"):
 		_show_fps = not _show_fps
+	elif event.is_action_pressed("mapa"):
+		_bigmap.toggle()
 
 
 func _process(delta: float) -> void:
@@ -200,7 +217,7 @@ func _process(delta: float) -> void:
 				txt += "\nposlední %s   nejlepší %s" % [format_time(circuit.last_time), format_time(circuit.best_time)]
 			_lap_label.text = txt
 		else:
-			_lap_label.text = "OKRUH: projeď bránou START"
+			_lap_label.text = "OKRUH %s (%.1f km): projeď bránou START" % [circuit.title, circuit.length / 1000.0]
 		_lap_label.modulate = Color(0.4, 1.0, 0.5) if _lap_flash > 0.0 else Color.WHITE
 
 	if car == null or not is_instance_valid(car) or car.t == null:

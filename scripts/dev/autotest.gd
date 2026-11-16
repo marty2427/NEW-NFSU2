@@ -21,6 +21,10 @@ func _ready() -> void:
 			_wall_angle = float(arg.substr(11))
 		if arg.begins_with("--lap="):
 			_lap_car = arg.substr(6)
+		if arg.begins_with("--kol="):
+			_lap_count = int(arg.substr(6))
+		if arg.begins_with("--limit="):
+			_lap_limit = float(arg.substr(8))
 		if arg.begins_with("--r="):
 			_lap_margin = float(arg.substr(4))
 		if arg.begins_with("--g="):
@@ -50,6 +54,8 @@ func _once(key: String) -> bool:
 var _lap_car := ""
 var _lap_g := 1.4
 var _lap_margin := 2.0
+var _lap_count := 2
+var _lap_limit := 330.0
 var _lap_keyboard := true
 var _ai: AIDriver
 var _lap_start := 0.0
@@ -98,20 +104,37 @@ func _lap_test(t: float, car) -> void:
 	if _ai.laps >= 1 and _once("lap1"):
 		print("[LAP] %s g=%.2f kolo 1: %.1f s" % [_lap_car, _lap_g, t - _lap_start])
 		_lap_start = t
-	if _ai.laps >= 2 or t > 330.0:
+	if _ai.laps >= _lap_count or t > _lap_limit:
 		print("[LAP] %s g=%.2f %s: %.1f s | odchylka od stopy max %.1f m | narazy %d (tvrde %d) | poskozeni %.0f | v min %.0f max %.0f | smyk max %.0f st" % [
-			_lap_car, _lap_g, "kolo 2" if _ai.laps >= 2 else "NEDOJEL (i %d)" % _ai.index, t - _lap_start, _ai.off_line_max, _impacts, _hard_impacts, car.damage, _min_v, _max_v, _max_slip])
+			_lap_car, _lap_g, ("kolo %d" % _lap_count) if _ai.laps >= _lap_count else "NEDOJEL (i %d z %d)" % [_ai.index, _ai.line.size()], t - _lap_start, _ai.off_line_max, _impacts, _hard_impacts, car.damage, _min_v, _max_v, _max_slip])
 		get_tree().quit()
 
 
 var _wall_angle := -1.0
+var _wall_dir := Vector2.RIGHT
+
+
+## Najde dlouhou rovnou ulici: vraci [bod 60 m od zacatku, smer].
+func _straight_street() -> Array:
+	var map: CityMap = arena.city.map
+	for e in map.polylines.size():
+		var pl := map.polylines[e]
+		if pl.size() == 2 and pl[0].distance_to(pl[1]) > 260.0 and map.side_type(e, 1) == "" and map.edge_class[e] == "ulice":
+			var dir := (pl[1] - pl[0]).normalized()
+			return [pl[0] + dir * 70.0, dir]
+	return [Vector2.ZERO, Vector2.RIGHT]
 
 
 ## Test otreni o zed: auto jede 100 km/h pod uhlem do zdi budovy, plny plyn, bez volantu.
 func _wall_test(t: float, car) -> void:
 	if t > 0.2 and _once("wallset"):
-		var basis := Basis(Vector3.UP, PI * 0.5 - deg_to_rad(_wall_angle))
-		arena.spawn_car("octavia", Transform3D(basis, Vector3(180, 0.5, -386)))   # rovna ulice I1-I2, zed je na z = -392.5
+		# Rovna ulice (najde se v planu mesta); auto miri pod uhlem k prave zdi
+		var st := _straight_street()
+		var dir: Vector2 = st[1]
+		_wall_dir = dir
+		var start: Vector2 = st[0] + CityMap.right_of(dir) * 2.0
+		var basis := Basis.looking_at(CityMap.to3(dir.rotated(deg_to_rad(_wall_angle))), Vector3.UP)
+		arena.spawn_car("octavia", Transform3D(basis, CityMap.to3(start, 0.5)))
 		arena.car.impact.connect(func(_c, dv, pos): print("[WALL] naraz dv=%.1f v miste (%.1f, %.2f, %.1f)" % [dv, pos.x, pos.y, pos.z]))
 		return
 	if t > 1.2 and _once("wallgo"):
@@ -120,7 +143,7 @@ func _wall_test(t: float, car) -> void:
 	if t > 1.2 and t >= _phase_log:
 		_phase_log = t + 0.25
 		var f: Vector3 = -car.global_basis.z
-		print("[WALL] t=%.2f pos=(%.1f, %.1f) v=%.0f km/h smer=%.0f st (0 = podel zdi) poskozeni=%.1f" % [t - 1.2, car.global_position.x, car.global_position.z, car.linear_velocity.length() * 3.6, rad_to_deg(atan2(-f.z, -f.x)), car.damage])
+		print("[WALL] t=%.2f pos=(%.1f, %.1f) v=%.0f km/h smer=%.0f st (0 = podel zdi) poskozeni=%.1f" % [t - 1.2, car.global_position.x, car.global_position.z, car.linear_velocity.length() * 3.6, rad_to_deg(_wall_dir.angle_to(Vector2(f.x, f.z))), car.damage])
 	if t > 4.5:
 		get_tree().quit()
 
@@ -134,7 +157,7 @@ var _phase_log := 0.0
 ## Test rizeni na volne plose: zatacky v ruznych rychlostech, slalom, drift.
 func _handling_test(t: float, car) -> void:
 	if t > 0.2 and _once("hset"):
-		arena.spawn_car(_handling_car, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 0.6, 1500)))
+		arena.spawn_car(_handling_car, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 0.6, 5200)))
 	# Faze: [od, do, plyn, volant(-1 vlevo..1 vpravo), rucni, cil km/h pro rozjezd]
 	var phases := [
 		[1.0, 6.0, "rozjezd 60", 0.0, false, 60.0],
@@ -185,7 +208,7 @@ func _handling_test(t: float, car) -> void:
 func _speed_test(t: float, car) -> void:
 	# Rovinka mimo mesto: plny plyn 45 s, vypis casu na 100/200 km/h a max. rychlosti
 	if t > 0.2 and _once("speed_setup"):
-		arena.spawn_car(_speed_car, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(1200, 0.6, 900)))
+		arena.spawn_car(_speed_car, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(4500, 0.6, 5600)))
 	_press("plyn", t > 1.5)
 	var drive_t: float = t - 1.5
 	for kmh in [100, 200]:
@@ -234,9 +257,11 @@ func _physics_process(delta: float) -> void:
 		print("[AUTOTEST] vybuch, destroyed=", car.destroyed)
 	if t > 21.0 and _once("crash"):
 		print("[AUTOTEST] test narazu do steny 30 m/s, poskozeni pred: ", car.damage)
-		car.teleport(Transform3D(Basis(), Vector3(60, 1.0, -380)))
+		var st := _straight_street()
+		_wall_dir = CityMap.right_of(st[1])
+		car.teleport(Transform3D(Basis.looking_at(CityMap.to3(_wall_dir), Vector3.UP), CityMap.to3(st[0], 1.0)))
 	if t > 21.3 and _once("crash_vel"):
-		car.linear_velocity = Vector3(0, 0, -30)
+		car.linear_velocity = CityMap.to3(_wall_dir) * 30.0
 	if t > 23.0 and _once("crash_res"):
 		print("[AUTOTEST] poskozeni po narazu: ", car.damage)
 

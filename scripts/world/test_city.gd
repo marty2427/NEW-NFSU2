@@ -7,6 +7,8 @@ var camera: ChaseCamera
 var hud: HUD
 var city: CityBuilder
 var circuit: Circuit
+var circuit_index := 0
+var _lot_index := -1
 var world_env: WorldEnvironment
 var sun: DirectionalLight3D
 var _sky_day: Sky
@@ -19,10 +21,10 @@ func _ready() -> void:
 	city.name = "Mapa"
 	add_child(city)
 	city.build()
-	circuit = Circuit.new()
-	circuit.name = "Okruh"
-	add_child(circuit)
-	circuit.setup(city.map)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--okruh="):
+			circuit_index = clampi(int(arg.substr(8)), 0, city.map.circuits.size() - 1)
+	_make_circuit()
 	_spawn_player()
 	_apply_daylight(Hra.daylight)
 	Hra.daylight_changed.connect(_apply_daylight)
@@ -37,6 +39,19 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap=") or arg.begins_with("--walltest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
+
+
+func _make_circuit() -> void:
+	if circuit:
+		circuit.queue_free()
+	circuit = Circuit.new()
+	circuit.name = "Okruh"
+	add_child(circuit)
+	circuit.setup(city.map, circuit_index)
+	if hud:
+		hud.circuit = circuit
+	if car and is_instance_valid(car):
+		circuit.car = car
 
 
 # ---------------------------------------------------------------------
@@ -73,6 +88,7 @@ func spawn_car(id: String, xform: Transform3D) -> void:
 		car = c
 	car.transform = xform
 	add_child(car)
+	city.load_around(xform.origin)
 	car.add_child(PlayerController.new())
 	car.add_child(CarAudio.new())
 	car.exploded.connect(_on_car_exploded)
@@ -111,6 +127,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		spawn_car(car.car_id, circuit.grid_transform())
 		circuit.reset()
 		hud.show_message("Na startu", 1.5)
+	if event.is_action_pressed("dalsi_okruh"):
+		circuit_index = (circuit_index + 1) % city.map.circuits.size()
+		_make_circuit()
+		spawn_car(car.car_id, circuit.grid_transform())
+		hud.show_message("Okruh: %s (%.1f km)" % [circuit.title, circuit.length / 1000.0], 3.0)
+	if event.is_action_pressed("na_plochu"):
+		# Presun na dalsi treninkovou plochu
+		var lots := city.map.lots.filter(func(l): return l.typ == "trenink")
+		if not lots.is_empty():
+			_lot_index = (_lot_index + 1) % lots.size()
+			var c: Vector2 = lots[_lot_index].stred
+			spawn_car(car.car_id, Transform3D(Basis(), Vector3(c.x, 0.6, c.y + 20.0)))
+			circuit.reset()
+			hud.show_message("Tréninková plocha %d" % (_lot_index + 1), 2.0)
 	if event.is_action_pressed("zvuk"):
 		var bus := AudioServer.get_bus_index("Master")
 		AudioServer.set_bus_mute(bus, not AudioServer.is_bus_mute(bus))
