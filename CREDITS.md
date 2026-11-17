@@ -14,6 +14,11 @@ a materiály a u Silvie se zavírají otevřené dveře a kapota (úprava za bě
 - „2005 Ford Mustang GT“ – autor Ricy (@ngon_3d) –
   https://sketchfab.com/3d-models/2005-ford-mustang-gt-26b6b60cf2804370ac3c64424242dc1f
 
+### Další modely aut (dodal vlastník projektu)
+- `nissan-skyline-r34`, `toyota-supra-mk4`, `mazda-rx7-fd`, `subaru-impreza-wrx-sti`, `bmw-m3-e46` – licence CC BY 4.0
+  (podle přání vlastníka soukromého projektu se autoři neuvádějí; při jakémkoli zveřejnění je nutné je doplnit).
+- Soubory jsou v původní podobě; ve hře se mění jen barva laku, materiály světel a skel a kola se oddělí od karoserie (za běhu).
+
 ## Řízení „Easy Vehicle Physics“ (`addons/gevp/`) – licence MIT
 - Godot Easy Vehicle Physics – David Shoemaker (DAShoe1), části Dechode a Baron Wittman –
   https://github.com/DAShoe1/Godot-Easy-Vehicle-Physics (převzaty skripty vehicle.gd a wheel.gd beze změn,

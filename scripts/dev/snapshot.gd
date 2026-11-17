@@ -84,6 +84,12 @@ func _ready() -> void:
 	for v in all:
 		if _only.is_empty() or _only.has(v[0]):
 			_views.append(v)
+	# Pohledy na auta: -- --auta=skyline,supra  (kazde auto se postavi na start a vyfoti z 3/4 zepredu)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--auta="):
+			for id in arg.substr(7).split(","):
+				var front := st.origin + st.basis * Vector3(-4.2, 0.6, -6.2)
+				_views.append(["auto_" + id, front, st.origin + Vector3(0, 0.1, 0), false, id])
 
 
 func _process(_delta: float) -> void:
@@ -102,6 +108,9 @@ func _process(_delta: float) -> void:
 		get_tree().quit()
 		return
 	var v: Array = _views[_index]
+	if v.size() > 4 and _frames == 0:
+		arena.spawn_car(v[4], arena.circuit.grid_transform())
+
 	cam.far = 16000.0
 	cam.fov = 60.0
 	cam.global_position = v[1]
@@ -114,7 +123,7 @@ func _process(_delta: float) -> void:
 		env.volumetric_fog_enabled = false
 		env.fog_enabled = false
 	_frames += 1
-	if _frames == 8:
+	if _frames == (14 if v.size() > 4 else 8):
 		_frames = 0
 		_index += 1
 		await RenderingServer.frame_post_draw

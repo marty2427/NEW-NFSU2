@@ -29,6 +29,31 @@ ENGINES = {
         banks=[[0.0, 0.25, 0.625, 0.875], [0.125, 0.375, 0.5, 0.75]], cyl_var=0.10, time_var=0.006, header_m=0.6, pipe_m=[2.6, 2.78],
         muffler_hz=800.0, bypass=0.26, drive=1.8, formants=[(140, 2.2, 1.8), (430, 1.8, 2.5), (1150, 1.8, 3.5), (2500, 1.2, 4.0)],
         intake=0.30, hiss=0.12, mech=0.05, pops=0.05, rpm_on=[800, 1900, 3100, 4500, 6000], rpm_off=[750, 2800, 5500]),
+    # BMW M3 S54: radovy sestivalec bez turba, toci 8000 - kovove jeci, hlasite sani
+    "r6": dict(
+        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.06, time_var=0.003, header_m=0.45, pipe_m=[2.4, 2.55],
+        muffler_hz=1300.0, bypass=0.3, drive=1.6, formants=[(380, 1.8, 2.5), (1050, 2.4, 3.5), (2600, 2.2, 4.0), (4200, 1.2, 4.0)],
+        intake=0.42, hiss=0.08, mech=0.08, pops=0.03, rpm_on=[1000, 2500, 4200, 6000, 7900], rpm_off=[900, 3800, 7200]),
+    # Supra 2JZ-GTE: sestivalec s turbem - hladky, hlubsi, "huci"
+    "r6t": dict(
+        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.07, time_var=0.004, header_m=0.5, pipe_m=[2.7, 2.85],
+        muffler_hz=800.0, bypass=0.22, drive=1.4, formants=[(220, 1.8, 2.2), (620, 1.8, 3.0), (1500, 1.6, 3.5), (3000, 1.0, 4.0)],
+        intake=0.28, hiss=0.11, mech=0.05, pops=0.06, rpm_on=[1000, 2300, 3700, 5200, 6900], rpm_off=[900, 3300, 6300]),
+    # Skyline RB26: sestivalec s turbem a primym vyfukem - chraplavy, ostry
+    "r6s": dict(
+        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.1, time_var=0.005, header_m=0.42, pipe_m=[2.2, 2.32],
+        muffler_hz=1400.0, bypass=0.34, drive=2.2, formants=[(300, 1.8, 2.5), (860, 2.6, 3.5), (2200, 2.4, 4.0), (3900, 1.4, 4.0)],
+        intake=0.3, hiss=0.14, mech=0.07, pops=0.1, rpm_on=[1100, 2500, 4100, 5900, 7900], rpm_off=[1000, 3700, 7200]),
+    # Impreza EJ257: plochy ctyrvalec - ruzne dlouhe svody = typicke nepravidelne "bublani"
+    "boxer": dict(
+        banks=[[0.0, 0.27, 0.5, 0.77]], cyl_var=0.18, time_var=0.006, header_m=0.7, pipe_m=[2.5],
+        muffler_hz=700.0, bypass=0.24, drive=1.7, formants=[(180, 2.4, 2.0), (520, 2.0, 3.0), (1300, 1.6, 3.5), (2700, 1.0, 4.0)],
+        intake=0.3, hiss=0.12, mech=0.05, pops=0.08, rpm_on=[900, 2100, 3500, 5000, 7400], rpm_off=[850, 3100, 6400]),
+    # RX-7 13B: wankel - ostre vyfukove pulsy, bzucivy "brap", vysoke otacky
+    "rot": dict(
+        banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.05, time_var=0.004, header_m=0.4, pipe_m=[1.9],
+        muffler_hz=1800.0, bypass=0.4, drive=2.6, formants=[(420, 2.2, 2.5), (1200, 3.0, 3.5), (2900, 2.6, 4.0)],
+        intake=0.38, hiss=0.12, mech=0.03, pops=0.12, rpm_on=[1100, 2700, 4500, 6400, 8400], rpm_off=[1000, 4000, 7600]),
 }
 
 

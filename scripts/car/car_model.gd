@@ -25,6 +25,8 @@ var beams: Array[SpotLight3D] = []
 var underglow: OmniLight3D
 
 static var _shared := {}
+## Vyrizle site kol (pocita se jen jednou pro kazde auto): "auto|uzel" -> {body, wheels}
+static var _cut_cache := {}
 
 
 static func build(id: String, is_player: bool, color := Color(0.1, 0.3, 0.8)) -> CarModel:
@@ -86,6 +88,16 @@ func _build(is_player: bool, color: Color) -> void:
 	for i in wheels.size():
 		wheels[i].position.y -= ground
 		wheel_rest[i].y -= ground
+	# Model, ktery neni vycentrovany: stred mezi koly do x = 0, z = 0
+	if c.call("vycentrovat", false) and wheel_rest.size() >= 4:
+		var mid := Vector3.ZERO
+		for w in wheel_rest:
+			mid += w / wheel_rest.size()
+		mid.y = 0.0
+		holder.position -= mid
+		for i in wheels.size():
+			wheels[i].position -= mid
+			wheel_rest[i] -= mid
 
 	_setup_materials(scene, c, color)
 	_setup_lights(holder, c, is_player)
@@ -151,16 +163,42 @@ func _aabb_of(root: Node, exclude: Array) -> AABB:
 		var m := mi as MeshInstance3D
 		if skip or m.mesh == null:
 			continue
-		var a: AABB = xform_to(m, self) * m.mesh.get_aabb()
+		var a := _mesh_aabb(m.mesh, xform_to(m, self))
 		result = a if first else result.merge(a)
 		first = false
 	return result
 
 
+## Obrys site v danych souradnicich. U natocenych dilu se pocita presne z vrcholu
+## (otoceny obrys by byl zbytecne velky a auto by melo spatnou kolizi).
+static func _mesh_aabb(mesh: Mesh, xf: Transform3D) -> AABB:
+	var b := xf.basis.orthonormalized()
+	var aligned := true
+	for col in [b.x, b.y, b.z]:
+		var v: Vector3 = (col as Vector3).abs()
+		if maxf(v.x, maxf(v.y, v.z)) < 0.999:
+			aligned = false
+	if aligned:
+		return xf * mesh.get_aabb()
+	var lo := Vector3(INF, INF, INF)
+	var hi := -lo
+	for s in mesh.get_surface_count():
+		var verts: PackedVector3Array = mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		for v in verts:
+			var p := xf * v
+			lo = lo.min(p)
+			hi = hi.max(p)
+	if lo.x == INF:
+		return xf * mesh.get_aabb()
+	return AABB(lo, hi - lo)
+
+
 func _setup_wheels(scene: Node, holder: Node3D, c: Callable) -> void:
 	var to_car := holder.transform
 	var template_name: String = c.call("kolo_sablona", "")
-	if template_name != "":
+	if c.call("kola_vyrezat", []).size() > 0:
+		_cut_wheels(scene, holder, c)
+	elif template_name != "":
 		var template := _find(scene, template_name) as Node3D
 		if template == null:
 			push_error("Sablona kola nenalezena")
@@ -234,6 +272,159 @@ func _setup_wheels(scene: Node, holder: Node3D, c: Callable) -> void:
 				d.get_parent().remove_child(d)
 				pivot.add_child(d)
 				d.transform = Transform3D(Basis(), center).affine_inverse() * (fixed_xf[d] as Transform3D)
+
+
+## Kola, ktera jsou v modelu slita s jinymi dily (vsechna kola v jedne siti, nebo kola soucasti karoserie):
+## sit se rozlozi na souvisle kusy a kusy, ktere se cele vejdou do valce kola, se presunou na otocny uzel kola.
+## Klice: kola_vyrezat = cast nazvu uzlu se siti, kola_pozice = stredy kol (souradnice modelu),
+## polomer_kola, kolo_polosirka = polovina sirky kola podel osy X (souradnice modelu).
+func _cut_wheels(scene: Node, holder: Node3D, c: Callable) -> void:
+	var to_car := holder.transform
+	var positions: Array = c.call("kola_pozice", [])
+	var radius: float = c.call("polomer_kola", 0.33)
+	var half_w: float = c.call("kolo_polosirka", radius * 0.6)
+	var axle := (to_car.basis * Vector3.RIGHT).normalized()
+	if axle.x < 0.0:
+		axle = -axle
+	var spin_basis := Basis(axle, Vector3.UP, axle.cross(Vector3.UP).normalized())
+	var spin_xf: Array[Transform3D] = []
+	for i in positions.size():
+		var center: Vector3 = to_car * (positions[i] as Vector3)
+		_make_pivot(i, center)
+		wheel_spins[i].transform = Transform3D(spin_basis, Vector3.ZERO)
+		spin_xf.append(Transform3D(spin_basis, center))
+	var patterns: Array = c.call("kola_vyrezat", [])
+	for node in scene.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		var path := _ancestor_names(mi)
+		var match_ := false
+		for pat in patterns:
+			if path.contains(String(pat)):
+				match_ = true
+		if not match_:
+			continue
+		var key := "%s|%s" % [car_id, path]
+		if not _cut_cache.has(key):
+			_cut_cache[key] = _split_mesh(mi.mesh, xform_to(mi, scene), positions, radius, half_w)
+		var res: Dictionary = _cut_cache[key]
+		var to_self := xform_to(mi, self)
+		for i in mini(positions.size(), 4):
+			var wm: ArrayMesh = res.wheels[i]
+			if wm == null:
+				continue
+			var part := MeshInstance3D.new()
+			part.name = "%s_kolo%d" % [mi.name, i]
+			part.mesh = wm
+			wheel_spins[i].add_child(part)
+			part.transform = spin_xf[i].affine_inverse() * to_self
+		var body_mesh: ArrayMesh = res.body
+		mi.mesh = body_mesh if body_mesh.get_surface_count() > 0 else null
+
+
+## Rozdeli sit na karoserii a kola. xf = poloha site v souradnicich modelu.
+static func _split_mesh(mesh: Mesh, xf: Transform3D, positions: Array, radius: float, half_w: float) -> Dictionary:
+	var body := ArrayMesh.new()
+	var wheel_meshes: Array = [null, null, null, null]
+	var lim := radius * 1.06
+	for s in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if idx.is_empty():
+			idx.resize(verts.size())
+			for i in verts.size():
+				idx[i] = i
+		var n := verts.size()
+		var pts := PackedVector3Array()
+		pts.resize(n)
+		var lo := Vector3(INF, INF, INF)
+		var hi := -lo
+		for i in n:
+			pts[i] = xf * verts[i]
+			lo = lo.min(pts[i])
+			hi = hi.max(pts[i])
+		# Souvisle kusy: vrcholy spojene trojuhelnikem nebo stejnou polohou (sevy textur)
+		var parent := PackedInt32Array()
+		parent.resize(n)
+		for i in n:
+			parent[i] = i
+		var snap := maxf((hi - lo).length() * 2e-6, 1e-7)
+		var seen := {}
+		for i in n:
+			var k := Vector3i((pts[i] / snap).round())
+			if seen.has(k):
+				_union(parent, i, seen[k])
+			else:
+				seen[k] = i
+		for t in range(0, idx.size(), 3):
+			_union(parent, idx[t], idx[t + 1])
+			_union(parent, idx[t], idx[t + 2])
+		var c_lo := {}
+		var c_hi := {}
+		for i in n:
+			var r := _root(parent, i)
+			if c_lo.has(r):
+				c_lo[r] = (c_lo[r] as Vector3).min(pts[i])
+				c_hi[r] = (c_hi[r] as Vector3).max(pts[i])
+			else:
+				c_lo[r] = pts[i]
+				c_hi[r] = pts[i]
+		var owner_of := {}
+		for r in c_lo:
+			var a: Vector3 = c_lo[r]
+			var b: Vector3 = c_hi[r]
+			owner_of[r] = -1
+			for w in mini(positions.size(), 4):
+				var p: Vector3 = positions[w]
+				if a.x >= p.x - half_w and b.x <= p.x + half_w and a.y >= p.y - lim and b.y <= p.y + lim and a.z >= p.z - lim and b.z <= p.z + lim:
+					owner_of[r] = w
+					break
+		var lists: Array = [PackedInt32Array(), PackedInt32Array(), PackedInt32Array(), PackedInt32Array(), PackedInt32Array()]
+		for t in range(0, idx.size(), 3):
+			var w: int = owner_of[_root(parent, idx[t])]
+			var l: PackedInt32Array = lists[w + 1]
+			l.append(idx[t])
+			l.append(idx[t + 1])
+			l.append(idx[t + 2])
+			lists[w + 1] = l
+		var mat := mesh.surface_get_material(s)
+		for w in 5:
+			var l: PackedInt32Array = lists[w]
+			if l.is_empty():
+				continue
+			var arr := arrays.duplicate()
+			arr[Mesh.ARRAY_INDEX] = l
+			# doplnkova data (kosti, vlastni kanaly) nejsou potreba a vyzadovala by zvlastni format
+			for k in [Mesh.ARRAY_CUSTOM0, Mesh.ARRAY_CUSTOM1, Mesh.ARRAY_CUSTOM2, Mesh.ARRAY_CUSTOM3, Mesh.ARRAY_BONES, Mesh.ARRAY_WEIGHTS]:
+				arr[k] = null
+			var target: ArrayMesh = body
+			if w > 0:
+				if wheel_meshes[w - 1] == null:
+					wheel_meshes[w - 1] = ArrayMesh.new()
+				target = wheel_meshes[w - 1]
+			target.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+			target.surface_set_material(target.get_surface_count() - 1, mat)
+	return {"body": body, "wheels": wheel_meshes}
+
+
+static func _root(parent: PackedInt32Array, i: int) -> int:
+	var r := i
+	while parent[r] != r:
+		r = parent[r]
+	while parent[i] != r:
+		var nxt := parent[i]
+		parent[i] = r
+		i = nxt
+	return r
+
+
+static func _union(parent: PackedInt32Array, a: int, b: int) -> void:
+	var ra := _root(parent, a)
+	var rb := _root(parent, b)
+	if ra != rb:
+		parent[ra] = rb
 
 
 func _make_pivot(i: int, pos: Vector3) -> Node3D:

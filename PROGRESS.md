@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (7. kolo – terén, mosty a podjezdy, kopce se serpentinami, magistrála 19 km, mapa 2× větší): mapa HOTOVÁ, 5 nových aut čeká na modely (Cowork).**
+**Fáze 1b (8. kolo – 5 nových aut: Skyline R34, Supra MK4, RX-7 FD, Impreza WRX STI, M3 E46; předtím terén, mosty, kopce, magistrála, mapa 2× větší): HOTOVO, čeká na otestování hráčem (hráč má sepsané otázky).**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -130,6 +130,24 @@
 - **Tachometr potřetí** – styl novějších NFS: žádný kotouč, tenký oblouk s dílky, svítící „ocas“ za ručičkou, velká rychlost,
   převod v šikmém rámečku, nitro jako řada šikmých dílků. Číslice rovné (písmo Oxanium).
 - Načtení hry trvá o ~6–8 s déle (staví se město). Kdyby vadilo → uložit postavené město do souboru.
+
+## 8. kolo – 5 nových aut (modely dodal hráč přes Cowork, `assets/cars/`)
+- **Auta** (klávesy 1–8 nebo N): Octavia, Mustang, Silvia, **Skyline R34** (AWD, 235 kW, stabilní, „Godzilla“),
+  **Supra MK4** (RWD, 250 kW, nejrychlejší na rovince, na plyn přetáčí), **RX-7 FD** (RWD, 1280 kg, nejhbitější, snadno driftuje,
+  křehčí), **Impreza WRX STI** (AWD, rallyová, drží i na mokru), **M3 E46** (RWD, motor bez turba do 8000 ot.).
+  Naměřeno 0–100 km/h: Skyline 3,7 s, Impreza 3,9 s, M3 4,3 s, RX-7 4,4 s, Supra 4,6 s; max 241–258 km/h.
+  Testovací jezdec objel okruh Centrum se všemi pěti bez tvrdého nárazu.
+- **Zvuky**: 5 nových motorů v `tools/motor_synth.py`: `r6` (M3, šestiválec bez turba), `r6t` (Supra, hlubší s turbem),
+  `r6s` (Skyline, chraplavý s turbem), `boxer` (Impreza, nepravidelné „bublání“), `rot` (RX-7, wankel).
+- **Načítání modelů** (`car_model.gd`) umí nově:
+  - `kola_vyrezat` – kola slitá s jinými díly (Skyline: všechna 4 kola v jedné síti; Supra: levé+pravé v jedné;
+    BMW: kola součástí celé karoserie) se rozloží na souvislé kusy a kusy uvnitř válce kola se přesunou na otočný uzel kola.
+    Výsledek se pamatuje (podruhé se auto postaví za pár ms).
+  - `vycentrovat` – model posunutý stranou (Skyline, RX-7) se vycentruje podle kol.
+  - přesný obrys karoserie u natočených dílů (RX-7 měl obrys 4,4 m vysoký → špatná kolize).
+- Měřítka: Skyline 1,38, RX-7 1,485, Supra 1,0, Impreza 0,836, BMW 17,96 (model byl ve špatných jednotkách).
+- BMW má celou karoserii v jedné textuře (černá s polepem) – barva laku se u něj nemění.
+- Autorství modelů se podle přání hráče nikde neuvádí (soukromý projekt).
 
 ## 7. kolo – terén, mosty, kopce, magistrála, 2× větší mapa (přání hráče)
 - **Mapa 2× větší**: poloměr města 3,9 km (plocha ~48 km²), **422 km silnic**, 1 268 křižovatek, 2 010 ulic,
