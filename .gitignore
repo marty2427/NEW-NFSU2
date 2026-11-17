@@ -12,3 +12,6 @@ Thumbs.db
 desktop.ini
 # Zaznam posledniho spusteni hry
 hra_log.txt
+
+# Python
+__pycache__/

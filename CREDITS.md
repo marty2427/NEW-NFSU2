@@ -47,7 +47,7 @@ Google Fonts (https://fonts.google.com), plný text licencí v `assets/fonts/LIC
 - HUD používá Russo One; tachometr a minimapa Oxanium; neonové cedule ostatní uvedená písma.
 
 ## Plán města (`data/mesto.json`) – vlastní práce projektu
-- Vygenerováno skriptem `tools/generuj_mesto.py`. Uspořádání je jen volně inspirované skutečnými městy
+- Vygenerováno skriptem `tools/generuj_mesto.py` (plán `data/mesto.json` i výšková mapa `data/teren.bin`). Uspořádání je jen volně inspirované skutečnými městy
   (řeka s nábřežími, okružní třída, paprskové bulváry, pravidelná mřížka, městská dálnice); žádná mapová data nejsou převzata.
 
 ## Názvy a značky

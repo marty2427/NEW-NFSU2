@@ -23,13 +23,14 @@ varying flat vec3 shop_color;
 
 void vertex() {
 	vec3 size = vec3(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz), length(MODEL_MATRIX[2].xyz));
-	wpos = VERTEX * size + vec3(0.0, size.y * 0.5, 0.0);   // metry, vyska nad zemi
+	float sink = floor(INSTANCE_CUSTOM.w);                 // o kolik metru je kvadr zapusten pod zem
+	wpos = VERTEX * size + vec3(0.0, size.y * 0.5 - sink, 0.0);   // metry, vyska nad zemi
 	wnorm = NORMAL;
 	wall_tint = COLOR.rgb;
 	lit_ratio = COLOR.a;
 	seed = INSTANCE_CUSTOM.x;
 	cell = INSTANCE_CUSTOM.yz;
-	float pick = INSTANCE_CUSTOM.w;
+	float pick = fract(INSTANCE_CUSTOM.w) / 0.9;
 	shop_color = pick < 0.34 ? vec3(1.0, 0.8, 0.55) : (pick < 0.67 ? vec3(0.8, 0.9, 1.0) : vec3(1.0, 0.65, 0.4));
 }
 

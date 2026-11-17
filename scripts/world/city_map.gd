@@ -2,7 +2,8 @@ class_name CityMap
 extends RefCounted
 ## Plan mesta: krizovatky (uzly) a ulice (zatocene lomene cary) nactene z data/mesto.json.
 ## Plan generuje skript tools/generuj_mesto.py (reka, dalnice, bulvary, stare mesto, mrizka...).
-## Souradnice jsou v metrech v rovine (x, z); zem je rovna (y = 0).
+## Pudorys je v metrech v rovine (x, z); kazdy bod ulice ma navic vysku (y). Teren mimo ulice
+## je ve vyskove mape data/teren.bin (mrizka 16 m). Mosty a podjezdy jsou useky ulic (v metrech od zacatku).
 
 const SIDEWALK := 4.5
 const PATH := "res://data/mesto.json"
@@ -15,6 +16,19 @@ var edge_b := PackedInt32Array()                  # ulice: krizovatka "do"
 var edge_class := PackedStringArray()             # dalnice, bulvar, obvod, nabrezi, trida, ulice, ulicka
 var edge_district := PackedStringArray()          # stare, mesto, jih, mrizka, predmesti, prumysl
 var polylines: Array[PackedVector2Array] = []     # osa kazde ulice (od -> do)
+var heights: Array[PackedFloat32Array] = []       # vyska kazdeho bodu osy
+var stations: Array[PackedFloat32Array] = []      # vzdalenost kazdeho bodu od zacatku ulice
+var node_y := PackedFloat32Array()                # vyska krizovatky
+var bridges: Array = []                           # pro kazdou ulici useky [od, do], kde je mostem
+var underpasses: Array = []                       # useky, kde vede pod mostem
+var water_level := 0.0
+var terrain_x0 := 0.0
+var terrain_z0 := 0.0
+var terrain_cell := 16.0
+var terrain_nx := 0
+var terrain_nz := 0
+var terrain_h := PackedFloat32Array()             # vyskova mapa [z * nx + x]
+var terrain_mask := PackedByteArray()             # 255 = mestska dlazba, 0 = trava
 var half_width := PackedFloat32Array()
 var node_edges: Array = []     # pro kazdou krizovatku pole {e, out (Vector2 smer ven), ang, w, start}, serazene podle uhlu
 var trim := PackedFloat32Array()   # o kolik se ulice u krizovatky zkrati (plocha krizovatky)
@@ -31,6 +45,7 @@ func _init() -> void:
 	radius = data.polomer
 	for p in data.uzly:
 		nodes.append(Vector2(p[0], p[1]))
+		node_y.append(p[2])
 	for s in data.ulice:
 		edge_a.append(int(s.a))
 		edge_b.append(int(s.b))
@@ -38,9 +53,21 @@ func _init() -> void:
 		edge_district.append(s.ctvrt)
 		half_width.append(float(s.w))
 		var pl := PackedVector2Array()
+		var hs := PackedFloat32Array()
+		var st := PackedFloat32Array()
+		var acc := 0.0
 		for p in s.body:
-			pl.append(Vector2(p[0], p[1]))
+			var q := Vector2(p[0], p[1])
+			if not pl.is_empty():
+				acc += q.distance_to(pl[pl.size() - 1])
+			pl.append(q)
+			hs.append(p[2])
+			st.append(acc)
 		polylines.append(pl)
+		heights.append(hs)
+		stations.append(st)
+		bridges.append(s.mosty)
+		underpasses.append(s.podjezdy)
 	for p in data.reka:
 		river.append(Vector2(p[0], p[1]))
 	for lot in data.plochy:
@@ -54,6 +81,21 @@ func _init() -> void:
 		for item in c.ulice:
 			entry.ulice.append([int(item[0]), bool(item[1])])
 		circuits.append(entry)
+
+	# Vyskova mapa terenu
+	var tm: Dictionary = data.teren
+	terrain_x0 = tm.x0
+	terrain_z0 = tm.z0
+	terrain_cell = tm.cell
+	terrain_nx = int(tm.nx)
+	terrain_nz = int(tm.nz)
+	water_level = tm.voda
+	var raw := FileAccess.get_file_as_bytes("res://data/" + String(tm.soubor))
+	var count := terrain_nx * terrain_nz
+	terrain_h.resize(count)
+	for i in count:
+		terrain_h[i] = raw.decode_s16(i * 2) * 0.02
+	terrain_mask = raw.slice(count * 2, count * 3)
 
 	node_edges.resize(nodes.size())
 	for i in nodes.size():
@@ -92,6 +134,57 @@ func _add_node_edge(node: int, e: int, out: Vector2, start: bool) -> void:
 	node_edges[node].append({"e": e, "out": out, "ang": fposmod(atan2(out.y, out.x), TAU), "w": half_width[e], "start": start})
 
 
+## Vyska terenu v bode (mimo ulice; pod ulicemi je teren schvalne o kousek niz).
+func height_at(x: float, z: float) -> float:
+	var fx := clampf((x - terrain_x0) / terrain_cell, 0.0, terrain_nx - 1.001)
+	var fz := clampf((z - terrain_z0) / terrain_cell, 0.0, terrain_nz - 1.001)
+	var ix := int(fx)
+	var iz := int(fz)
+	var tx := fx - ix
+	var tz := fz - iz
+	var i := iz * terrain_nx + ix
+	var a := lerpf(terrain_h[i], terrain_h[i + 1], tx)
+	var b := lerpf(terrain_h[i + terrain_nx], terrain_h[i + terrain_nx + 1], tx)
+	return lerpf(a, b, tz)
+
+
+## Vyska ulice e ve vzdalenosti s od jejiho zacatku.
+func edge_height(e: int, s: float) -> float:
+	var st := stations[e]
+	var hs := heights[e]
+	var n := st.size()
+	if s <= 0.0:
+		return hs[0]
+	if s >= st[n - 1]:
+		return hs[n - 1]
+	var lo := 0
+	var hi := n - 1
+	while hi - lo > 1:
+		var mid := (lo + hi) >> 1
+		if st[mid] <= s:
+			lo = mid
+		else:
+			hi = mid
+	return lerpf(hs[lo], hs[hi], (s - st[lo]) / maxf(st[hi] - st[lo], 0.0001))
+
+
+func _in_spans(spans: Array, s: float) -> bool:
+	for sp in spans:
+		if s >= sp[0] and s <= sp[1]:
+			return true
+	return false
+
+
+## Je ulice e ve vzdalenosti s mostem (nad jinou ulici nebo nad rekou)?
+func is_bridge(e: int, s: float) -> bool:
+	return _in_spans(bridges[e], s)
+
+
+## Vede ulice e ve vzdalenosti s pod mostem?
+func is_under(e: int, s: float) -> bool:
+	return _in_spans(underpasses[e], s)
+
+
 ## Smer "vpravo" od smeru jizdy d (pri pohledu shora, sever nahore).
 static func right_of(d: Vector2) -> Vector2:
 	return Vector2(-d.y, d.x)
@@ -125,14 +218,15 @@ func edges_near(p: Vector2, dist: float) -> PackedInt32Array:
 
 ## Nejblizsi ulice k bodu: {e, dist, point, dir}.
 func nearest_edge(p: Vector2, search := 400.0) -> Dictionary:
-	var best := {"e": -1, "dist": 1e9, "point": p, "dir": Vector2.RIGHT}
+	var best := {"e": -1, "dist": 1e9, "point": p, "dir": Vector2.RIGHT, "s": 0.0, "y": 0.0}
 	for e in edges_near(p, search):
 		var pl := polylines[e]
 		for i in pl.size() - 1:
 			var q := Geometry2D.get_closest_point_to_segment(p, pl[i], pl[i + 1])
 			var d := p.distance_to(q)
 			if d < best.dist:
-				best = {"e": e, "dist": d, "point": q, "dir": (pl[i + 1] - pl[i]).normalized()}
+				var s := stations[e][i] + q.distance_to(pl[i])
+				best = {"e": e, "dist": d, "point": q, "dir": (pl[i + 1] - pl[i]).normalized(), "s": s, "y": edge_height(e, s)}
 	return best
 
 
@@ -176,6 +270,33 @@ func corner_angle(node: int, k: int) -> float:
 ## Osa ulice zkracena u obou krizovatek (kde zacina a konci vozovka).
 func trimmed(e: int) -> PackedVector2Array:
 	return cut_polyline(polylines[e], trim[edge_a[e]], trim[edge_b[e]])
+
+
+## Zkracena osa ulice se vzdalenostmi od zacatku a vyskami: {p, s, y}.
+func trimmed_data(e: int) -> Dictionary:
+	var pl := polylines[e]
+	var st := stations[e]
+	var total := st[st.size() - 1]
+	var from := trim[edge_a[e]]
+	var to := total - trim[edge_b[e]]
+	var pts := PackedVector2Array()
+	var ss := PackedFloat32Array()
+	var ys := PackedFloat32Array()
+	if to - from < 1.0:
+		return {"p": pts, "s": ss, "y": ys}
+	var first := CityMap.point_at(pl, from)
+	pts.append(first[0])
+	ss.append(from)
+	for i in range(1, pl.size() - 1):
+		if st[i] > from + 0.5 and st[i] < to - 0.5:
+			pts.append(pl[i])
+			ss.append(st[i])
+	var last := CityMap.point_at(pl, to)
+	pts.append(last[0])
+	ss.append(to)
+	for s in ss:
+		ys.append(edge_height(e, s))
+	return {"p": pts, "s": ss, "y": ys}
 
 
 static func polyline_length(pl: PackedVector2Array) -> float:
@@ -233,30 +354,52 @@ static func offset_polyline(pl: PackedVector2Array, dist: float) -> PackedVector
 
 ## Okraj bloku podel ulice (cara domu): od rohu u prvni krizovatky po roh u druhe.
 ## side: +1 = vpravo ve smeru od->do, -1 = vlevo. extra = vzdalenost za okrajem vozovky.
-func block_line(e: int, side: int, extra: float) -> PackedVector2Array:
+## Vraci {p: body, y: vysky, s: vzdalenosti podel ulice}.
+func block_line_data(e: int, side: int, extra: float) -> Dictionary:
 	var a := edge_a[e]
 	var b := edge_b[e]
 	var ka := _slot(a, e)
 	var kb := _slot(b, e)
 	var pl := polylines[e]
+	var st := stations[e]
+	var hs := heights[e]
 	var off := offset_polyline(pl, side * (half_width[e] + extra))
-	var out := PackedVector2Array()
+	var pts := PackedVector2Array()
+	var ys := PackedFloat32Array()
+	var ss := PackedFloat32Array()
 	# U krizovatky "od": prava strana = roh (k, k+1), leva = roh (k-1, k)
 	var first := corner(a, ka if side > 0 else ka - 1, extra)
 	var last := corner(b, kb - 1 if side > 0 else kb, extra)
-	out.append(first)
+	var total := st[st.size() - 1]
 	# Body podel ulice; ty, ktere by lezely "pred" rohem (uvnitr krizovatky), se vynechaji
 	var dir_a := (pl[1] - pl[0]).normalized()
 	var dir_b := (pl[pl.size() - 1] - pl[pl.size() - 2]).normalized()
 	var from := (first - pl[0]).dot(dir_a)
-	var to := (last - pl[pl.size() - 1]).dot(dir_b)
-	var total := polyline_length(pl)
-	var acc := 0.0
+	var to := total + (last - pl[pl.size() - 1]).dot(dir_b)
+	pts.append(first)
+	ys.append(edge_height(e, clampf(from, 0.0, total)))
+	ss.append(clampf(from, 0.0, total))
 	for i in range(1, pl.size() - 1):
-		acc += pl[i].distance_to(pl[i - 1])
-		if acc > from + 2.0 and acc < total + to - 2.0:
-			out.append(off[i])
-	out.append(last)
+		if st[i] > from + 2.0 and st[i] < to - 2.0:
+			pts.append(off[i])
+			ys.append(hs[i])
+			ss.append(st[i])
+	pts.append(last)
+	ys.append(edge_height(e, clampf(to, 0.0, total)))
+	ss.append(clampf(to, 0.0, total))
+	return {"p": pts, "y": ys, "s": ss}
+
+
+func block_line(e: int, side: int, extra: float) -> PackedVector2Array:
+	return block_line_data(e, side, extra).p
+
+
+## Okraj bloku jako body v prostoru (x, vyska, z).
+func block_line3(e: int, side: int, extra: float) -> PackedVector3Array:
+	var d := block_line_data(e, side, extra)
+	var out := PackedVector3Array()
+	for i in d.p.size():
+		out.append(Vector3(d.p[i].x, d.y[i], d.p[i].y))
 	return out
 
 
@@ -269,6 +412,33 @@ func circuit_polyline(index: int) -> PackedVector2Array:
 			pl.reverse()
 		for i in pl.size() - 1:
 			out.append(pl[i])
+	return out
+
+
+## Osa okruhu v prostoru (s vyskami).
+func circuit_polyline3(index: int) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for item in circuits[index].ulice:
+		var e: int = item[0]
+		var n := polylines[e].size()
+		for k in n - 1:
+			var i := k if item[1] else n - 1 - k
+			out.append(Vector3(polylines[e][i].x, heights[e][i], polylines[e][i].y))
+	return out
+
+
+## Obrys volne plochy v prostoru (x, vyska, z).
+func lot_polygon3(lot: Dictionary, extra: float) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for item in lot.ulice:
+		var line := block_line3(item[0], item[2], extra)
+		if not item[1]:
+			line.reverse()
+		for i in line.size() - 1:
+			if out.is_empty() or Vector2(out[out.size() - 1].x - line[i].x, out[out.size() - 1].z - line[i].z).length() > 0.05:
+				out.append(line[i])
+	if out.size() > 2 and Vector2(out[0].x - out[out.size() - 1].x, out[0].z - out[out.size() - 1].z).length() < 0.05:
+		out.remove_at(out.size() - 1)
 	return out
 
 

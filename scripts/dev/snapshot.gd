@@ -23,20 +23,46 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--mapa"):
 		arena.hud._bigmap.toggle()
 	var st: Transform3D = arena.circuit.grid_transform()
+	var map: CityMap = arena.city.map
+	var g := func(x: float, z: float, up: float) -> Vector3: return Vector3(x, map.height_at(x, z) + up, z)
 	var lot := Vector3.ZERO
-	for l: Dictionary in arena.city.map.lots:
-		if l.typ == "trenink":
-			lot = CityMap.to3(l.stred)
-			break
+	if not arena.city.lot_spawns.is_empty():
+		lot = arena.city.lot_spawns[0]
+	# most a podjezd na magistrale, serpentiny v kopcich
+	var bridge := Vector3.ZERO
+	var bridge_dir := Vector3.FORWARD
+	var under := Vector3.ZERO
+	var under_dir := Vector3.FORWARD
+	var hill := Vector3.ZERO
+	for e in map.polylines.size():
+		var pl := map.polylines[e]
+		if map.edge_class[e] == "magistrala":
+			for sp in map.bridges[e]:
+				if bridge == Vector3.ZERO and sp[1] - sp[0] < 80.0:
+					var pd := CityMap.point_at(pl, sp[0] - 70.0)
+					bridge = CityMap.to3(pd[0], map.edge_height(e, sp[0] - 70.0) + 2.0)
+					bridge_dir = CityMap.to3(pd[1])
+			for sp in map.underpasses[e]:
+				if under == Vector3.ZERO:
+					var pd := CityMap.point_at(pl, sp[0] - 60.0)
+					under = CityMap.to3(pd[0], map.edge_height(e, sp[0] - 60.0) + 1.8)
+					under_dir = CityMap.to3(pd[1])
+		if map.edge_class[e] == "horska" and hill == Vector3.ZERO and pl.size() > 200:
+			hill = CityMap.to3(pl[150], map.heights[e][150])
 	var all := [
-		["mapa", Vector3(0, 5200, 1), Vector3(0, 0, 0), true],
-		["reka", Vector3(250, 60, 520), Vector3(-200, 0, 250), false],
-		["stare", Vector3(150, 120, 150), Vector3(-50, 0, -80), false],
-		["mrizka", Vector3(700, 220, -350), Vector3(1100, 0, -800), false],
-		["dalnice", CityMap.to3(arena.city.map.polylines[arena.city.map.circuits[2].ulice[0][0]][3], 3.0), CityMap.to3(arena.city.map.polylines[arena.city.map.circuits[2].ulice[0][0]][8], 3.0), false],
-		["start", st.origin + st.basis * Vector3(0.5, 2.2, 7.5), st.origin + st.basis * Vector3(0, 0.6, -20), false],
+		["mapa", Vector3(0, 9500, -899), Vector3(0, 0, -900), true],
+		["start", st.origin + st.basis * Vector3(0.5, 1.6, 7.5), st.origin + st.basis * Vector3(0, 0.0, -20), false],
 		["plocha", lot + Vector3(120, 90, 160), lot, false],
-		["centrum_vyska", Vector3(20, 160, 200), Vector3(20, 0, 10), false],
+		["reka", g.call(250, 520, 60), g.call(-200, 250, 0), false],
+		["stare", g.call(150, 150, 110), g.call(-50, -80, 0), false],
+		["mrizka", g.call(900, -500, 200), g.call(1400, -1000, 0), false],
+		["most", bridge, bridge + bridge_dir * 60.0, false],
+		["podjezd", under, under + under_dir * 60.0, false],
+		["serpentiny", hill + Vector3(0, 60, 0) + (hill * Vector3(1, 0, 1)).normalized() * 250.0, hill, false],
+		["vyhled", hill + Vector3(0, 12, 0), Vector3(0, 30, 0), false],
+		["serpentiny2", g.call(-1300, -3900, 170), g.call(-2150, -4350, 0), false],
+		["zvrcholu", g.call(-2119, -5029, 45), Vector3(0, 40, -300), false],
+		["kopce", g.call(-600, -3200, 90), g.call(-1800, -4900, 150), false],
 	]
 	# Pohledy ridice podel okruhu
 	var route: PackedVector3Array = arena.circuit.route
@@ -54,7 +80,7 @@ func _ready() -> void:
 		var b := route[(i + 1) % route.size()]
 		var p := a.lerp(b, (dist - acc[i]) / maxf(acc[i + 1] - acc[i], 0.01))
 		var d := (b - a).normalized()
-		all.append(["okruh%d" % k, p + Vector3(0, 1.8, 0) + d.cross(Vector3.UP) * 2.0, p + d * 40.0 + Vector3(0, 2.5, 0), false])
+		all.append(["okruh%d" % k, p + Vector3(0, 1.8, 0) + d.cross(Vector3.UP).normalized() * 2.0, p + d * 40.0 + Vector3(0, 2.0, 0), false])
 	for v in all:
 		if _only.is_empty() or _only.has(v[0]):
 			_views.append(v)
@@ -76,7 +102,7 @@ func _process(_delta: float) -> void:
 		get_tree().quit()
 		return
 	var v: Array = _views[_index]
-	cam.far = 9000.0
+	cam.far = 16000.0
 	cam.fov = 60.0
 	cam.global_position = v[1]
 	cam.look_at(v[2], Vector3.UP)

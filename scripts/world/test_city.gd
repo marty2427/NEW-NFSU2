@@ -9,6 +9,7 @@ var city: CityBuilder
 var circuit: Circuit
 var circuit_index := 0
 var _lot_index := -1
+var _testing := false      # automaticke testy jezdi i mimo mesto (na zachranne rovine)
 var world_env: WorldEnvironment
 var sun: DirectionalLight3D
 var _sky_day: Sky
@@ -44,6 +45,8 @@ func _ready() -> void:
 		if arg == "--noc":
 			Hra.toggle_daylight()
 	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest="):
+			_testing = true
 		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap=") or arg.begins_with("--walltest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
 
@@ -127,6 +130,18 @@ func spawn_car(id: String, xform: Transform3D) -> void:
 	circuit.car = car
 
 
+## Kdyby auto vyletelo z mapy a propadlo pod mesto, vrati se na nejblizsi ulici.
+func _physics_process(_delta: float) -> void:
+	if car == null or not is_instance_valid(car) or city == null:
+		return
+	if car.global_position.y < CityBuilder.SAFE_Y + 25.0 and not _testing:
+		var ne := city.map.nearest_edge(Vector2(car.global_position.x, car.global_position.z), 1500.0)
+		if ne.e >= 0:
+			var dir: Vector2 = ne.dir
+			spawn_car(car.car_id, Transform3D(Basis.looking_at(Vector3(dir.x, 0, dir.y), Vector3.UP), Vector3(ne.point.x, ne.y + 0.8, ne.point.y)))
+			hud.show_message("Zpátky na silnici", 2.0)
+
+
 func _respawn_here(id: String) -> void:
 	var xf := car.global_transform
 	var fwd := -xf.basis.z
@@ -140,10 +155,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if car == null or hud == null:
 		return      # hra se jeste nacita
 	var cars := CarTuning.list_cars()
-	for i in 3:
+	for i in 8:
 		if event.is_action_pressed("auto_%d" % (i + 1)) and i < cars.size():
 			_respawn_here(cars[i])
 			hud.show_message(car.t.nazev, 2.0)
+	if event.is_action_pressed("dalsi_auto") and not cars.is_empty():
+		var k := cars.find(car.car_id)
+		_respawn_here(cars[(k + 1) % cars.size()])
+		hud.show_message(car.t.nazev, 2.0)
 	if event.is_action_pressed("nacist_ladeni"):
 		_respawn_here(car.car_id)
 		hud.show_message("auta.cfg znovu načten", 1.5)
@@ -166,11 +185,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		hud.show_message("Okruh: %s (%.1f km)" % [circuit.title, circuit.length / 1000.0], 3.0)
 	if event.is_action_pressed("na_plochu"):
 		# Presun na dalsi treninkovou plochu
-		var lots := city.map.lots.filter(func(l): return l.typ == "trenink")
-		if not lots.is_empty():
-			_lot_index = (_lot_index + 1) % lots.size()
-			var c: Vector2 = lots[_lot_index].stred
-			spawn_car(car.car_id, Transform3D(Basis(), Vector3(c.x, 0.6, c.y + 20.0)))
+		if not city.lot_spawns.is_empty():
+			_lot_index = (_lot_index + 1) % city.lot_spawns.size()
+			spawn_car(car.car_id, Transform3D(Basis(), city.lot_spawns[_lot_index]))
 			circuit.reset()
 			hud.show_message("Tréninková plocha %d" % (_lot_index + 1), 2.0)
 	if event.is_action_pressed("zvuk"):

@@ -46,20 +46,43 @@ func _process(_delta: float) -> void:
 		_marker.queue_redraw()
 
 
+var _center := Vector2.ZERO
+var _extent := 1.0
+
+
+## Stred a velikost mapy podle vsech silnic (mesto i kopce).
+func _fit() -> void:
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for pl in city_map.polylines:
+		for p in pl:
+			lo = lo.min(p)
+			hi = hi.max(p)
+	_center = (lo + hi) * 0.5
+	_extent = maxf(hi.x - lo.x, hi.y - lo.y) * 0.5 * 1.04
+
+
 func _scale() -> float:
-	return minf(size.x, size.y) * 0.46 / (city_map.radius * 1.14)
+	return minf(size.x, size.y) * 0.47 / _extent
 
 
 func _to_screen(p: Vector2) -> Vector2:
-	return size * 0.5 + p * _scale()
+	return size * 0.5 + (p - _center) * _scale()
 
 
 func _draw_map() -> void:
 	if city_map == null:
 		return
+	if _extent <= 1.0:
+		_fit()
 	var r := minf(size.x, size.y) * 0.49
-	_layer.draw_circle(size * 0.5, r, C_BG)
-	_layer.draw_arc(size * 0.5, r, 0.0, TAU, 128, Color(1, 1, 1, 0.25), 2.0, true)
+	var panel := Rect2(size * 0.5 - Vector2(r * 1.18, r), Vector2(r * 2.36, r * 2.0))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = C_BG
+	sb.set_corner_radius_all(18)
+	sb.border_color = Color(1, 1, 1, 0.22)
+	sb.set_border_width_all(2)
+	_layer.draw_style_box(sb, panel)
 	var sc := _scale()
 	# Volne plochy a voda
 	for lot: Dictionary in city_map.lots:
@@ -74,9 +97,9 @@ func _draw_map() -> void:
 		if Geometry2D.triangulate_polygon(poly).size() > 0:
 			_layer.draw_colored_polygon(poly, col)
 	# Ulice podle dulezitosti
-	var styles := {"ulicka": [Color(0.6, 0.6, 0.7, 0.55), 1.0], "ulice": [Color(0.66, 0.68, 0.76, 0.6), 1.2], "trida": [Color(0.7, 0.68, 0.64, 0.7), 1.5],
+	var styles := {"magistrala": [Color(1.0, 0.35, 0.4), 3.4], "horska": [Color(0.6, 0.95, 0.6), 2.4], "ulicka": [Color(0.6, 0.6, 0.7, 0.55), 1.0], "ulice": [Color(0.66, 0.68, 0.76, 0.6), 1.2], "trida": [Color(0.7, 0.68, 0.64, 0.7), 1.5],
 		"obvod": [Color(0.85, 0.86, 0.92), 2.2], "nabrezi": [Color(0.7, 0.82, 1.0), 2.2], "bulvar": [Color(0.96, 0.96, 1.0), 2.6], "dalnice": [Color(1.0, 0.68, 0.25), 3.4]}
-	for order in ["ulicka", "ulice", "trida", "obvod", "nabrezi", "bulvar", "dalnice"]:
+	for order in ["ulicka", "ulice", "trida", "obvod", "nabrezi", "horska", "bulvar", "dalnice", "magistrala"]:
 		var st: Array = styles[order]
 		for e in city_map.polylines.size():
 			if city_map.edge_class[e] != order:
@@ -84,14 +107,14 @@ func _draw_map() -> void:
 			var pts := PackedVector2Array()
 			for p in city_map.polylines[e]:
 				pts.append(_to_screen(p))
-			_layer.draw_polyline(pts, st[0], maxf(st[1] * sc * 22.0, 1.0), true)
+			_layer.draw_polyline(pts, st[0], maxf(st[1] * sc * 30.0, 1.0), true)
 	# Okruh
 	if circuit:
 		for e: int in circuit.edge_set:
 			var pts := PackedVector2Array()
 			for p in city_map.polylines[e]:
 				pts.append(_to_screen(p))
-			_layer.draw_polyline(pts, Color(0.15, 0.85, 1.0), maxf(3.2 * sc * 22.0, 2.5), true)
+			_layer.draw_polyline(pts, Color(0.15, 0.85, 1.0), maxf(3.2 * sc * 30.0, 2.5), true)
 		var sp := _to_screen(Vector2(circuit.start_xf.origin.x, circuit.start_xf.origin.z))
 		_layer.draw_circle(sp, 8.0, Color.WHITE)
 		_layer.draw_circle(sp, 5.0, Color(0.05, 0.05, 0.08))

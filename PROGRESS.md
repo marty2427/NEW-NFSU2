@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (6. kolo – obří město 213 km silnic podle skutečných měst, 4 okruhy, velká mapa, tachometr ve stylu novějších NFS): HOTOVO, čeká na otestování hráčem.**
+**Fáze 1b (7. kolo – terén, mosty a podjezdy, kopce se serpentinami, magistrála 19 km, mapa 2× větší): mapa HOTOVÁ, 5 nových aut čeká na modely (Cowork).**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -130,6 +130,29 @@
 - **Tachometr potřetí** – styl novějších NFS: žádný kotouč, tenký oblouk s dílky, svítící „ocas“ za ručičkou, velká rychlost,
   převod v šikmém rámečku, nitro jako řada šikmých dílků. Číslice rovné (písmo Oxanium).
 - Načtení hry trvá o ~6–8 s déle (staví se město). Kdyby vadilo → uložit postavené město do souboru.
+
+## 7. kolo – terén, mosty, kopce, magistrála, 2× větší mapa (přání hráče)
+- **Mapa 2× větší**: poloměr města 3,9 km (plocha ~48 km²), **422 km silnic**, 1 268 křižovatek, 2 010 ulic,
+  ~37 000 domů, ~7 200 lamp, ~29 000 stromů. Přibyl třetí okruh tříd a 6 vedlejších paprsků.
+- **Nerovný terén**: každá ulice má výšky (generátor řeší výšky všech ulic najednou: blízko přírodního terénu,
+  omezený sklon – ve městě do ~9 %, dálnice do 3 %, horské silnice do ~22 %). Teren mimo ulice je výšková mapa
+  `data/teren.bin` (mřížka 16 m, int16 po 2 cm + maska dlažba/tráva), kreslí se shaderem `terrain.gdshader`.
+  Řeka teče v korytě ~4 m pod městem, nábřeží má zeď až k vodě.
+- **Magistrála** (19 km): velká „osmička“ napříč celou mapou, zatáčí na obě strany a sama sebe kříží mostem.
+  **22 mimoúrovňových křížení** (12 mostů, 11 podjezdů) + 4 úrovňové nájezdy. Most min. 7,7 m nad spodní silnicí.
+  Podjezd má opěrné zdi, most zábradlí, spodek mostovky a nad řekou/údolím pilíře.
+- **Kopce za městem** (na severozápadě, jako v NFSU2): serpentiny se 6 vlásenkami, hřebenovka se dvěma sjezdy,
+  vrcholy až ~700 m, výhled na celé město. Stromy, chalupy, svodidla.
+- **Okruhy (6)**: Centrum 4,3 km · Nábřeží 9,0 · Dálnice 15,4 · Velký okruh 7,5 · **Magistrála 19,1** · **Kopce 10,4**.
+  Testovací jezdec: Centrum 2:07 (Octavia), Magistrála 4:52 (Mustang, max 255 km/h), Kopce 4:06 (Silvia), všude 0 nárazů.
+- **Fyzika**: silnice, chodníky, křižovatky, plochy a mostovky jsou jedna kolizní síť (dřív rovná zem).
+  Zdi bloků sledují výšku ulice (2,5 m pod ní až 5,5 m nad ní – pod mostovku se vejdou). Hluboko pod mapou
+  je záchranná rovina; když auto propadne, hra ho vrátí na nejbližší ulici.
+- Načítání okolí za jízdy: nejdelší krok ~4 ms (modely rekvizit se načtou předem). Stavba města při startu ~13 s (cloud).
+- Dohled domů 4,8 km, stromů 3,2 km, kamera do 9 km (z kopců je vidět celé město).
+- Výběr auta: klávesy 1–8 nebo N (další auto) – připraveno pro 5 nových aut (čekají na stažení přes Cowork).
+- Generátor: `python3 tools/generuj_mesto.py [nahled.png] [--cache]` (`--cache` = jen přepočet výšek, 4 s;
+  celá síť ~90 s). Tvar magistrály `MAG`, kopců `terrain()` a `hill_roads()`.
 
 ## Oprava po 6. kole: hra po aktualizaci nenaběhla (nahlásil hráč)
 - **Příčina:** `HRAT.bat` spouštěl přípravu Godotu (`--import`) jen úplně poprvé. Po aktualizaci s novými skripty

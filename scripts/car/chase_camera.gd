@@ -27,7 +27,7 @@ func _ready() -> void:
 	add_to_group("camera_shake")
 	current = true
 	near = 0.05
-	far = 2500.0
+	far = 9000.0
 	_noise.frequency = 2.5
 
 

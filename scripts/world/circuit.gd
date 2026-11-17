@@ -36,23 +36,34 @@ func setup(city_map: CityMap, circuit_index := 0) -> void:
 	title = info.nazev
 	length = info.delka
 	_items = info.ulice
-	for p in map.circuit_polyline(index):
-		route.append(CityMap.to3(p))
+	route = map.circuit_polyline3(index)
 	for item in _items:
 		edge_set[item[0]] = true
-		checkpoints.append(CityMap.to3(map.nodes[_from_node(item)]))
+		var nid := _from_node(item)
+		checkpoints.append(CityMap.to3(map.nodes[nid], map.node_y[nid]))
 	# Start: na prvnim useku kousek za prvni krizovatkou
 	var e: int = _items[0][0]
-	var pl := map.polylines[e].duplicate()
-	if not _items[0][1]:
-		pl.reverse()
-	var total := CityMap.polyline_length(pl)
+	var total: float = map.stations[e][map.stations[e].size() - 1]
 	var dist := minf(map.trim[_from_node(_items[0])] + 45.0, total * 0.45)
-	var pd := CityMap.point_at(pl, dist)
-	start_xf = Transform3D(Basis.looking_at(CityMap.to3(pd[1]), Vector3.UP), CityMap.to3(pd[0], 0.6))
-	var gd := CityMap.point_at(pl, maxf(dist - 25.0, map.trim[_from_node(_items[0])] + 2.0))
-	_grid_xf = Transform3D(Basis.looking_at(CityMap.to3(gd[1]), Vector3.UP), CityMap.to3(gd[0], 0.6))
+	start_xf = _road_transform(e, _items[0][1], dist)
+	_grid_xf = _road_transform(e, _items[0][1], maxf(dist - 25.0, map.trim[_from_node(_items[0])] + 2.0))
 	_build_visuals(map.half_width[e])
+
+
+## Poloha a smer na ulici e ve vzdalenosti dist od zacatku jizdy (forward = jede se od "a" k "b").
+func _road_transform(e: int, forward: bool, dist: float) -> Transform3D:
+	var pl := map.polylines[e].duplicate()
+	var total: float = map.stations[e][map.stations[e].size() - 1]
+	if not forward:
+		pl.reverse()
+	var pd := CityMap.point_at(pl, dist)
+	var s := dist if forward else total - dist
+	var s2 := s + (3.0 if forward else -3.0)
+	var y := map.edge_height(e, s)
+	var slope := (map.edge_height(e, s2) - y) / 3.0
+	var dir2: Vector2 = pd[1]
+	var dir3 := Vector3(dir2.x, slope, dir2.y).normalized()
+	return Transform3D(Basis.looking_at(dir3, Vector3.UP), CityMap.to3(pd[0], y + 0.6))
 
 
 func _from_node(item: Array) -> int:
@@ -133,7 +144,7 @@ func _build_visuals(start_half_width: float) -> void:
 		var d_in: Vector2 = nd[0]
 		var d_out: Vector2 = nd[1]
 		var id: int = nd[3]
-		var p := CityMap.to3(map.nodes[id])
+		var p := CityMap.to3(map.nodes[id], map.node_y[id])
 		var turn := d_in.angle_to(d_out)            # + = doprava (pri pohledu shora)
 		var size: float = map.trim[id] + 6.0
 		# Svitici sipky na vnejsi strane zatacky (bez kolize), celem k prijizdejicimu autu
@@ -224,7 +235,7 @@ func _physics_process(delta: float) -> void:
 	var p := car.global_position
 	# Start / cil: prujezd carou ve smeru jizdy
 	var local := start_xf.affine_inverse() * p
-	if absf(local.x) < 13.0 and absf(local.z) < 3.5 and car.linear_velocity.dot(-start_xf.basis.z) > 2.0:
+	if absf(local.x) < 13.0 and absf(local.z) < 3.5 and absf(local.y) < 5.0 and car.linear_velocity.dot(-start_xf.basis.z) > 2.0:
 		if not running:
 			running = true
 			lap_time = 0.0
@@ -240,7 +251,7 @@ func _physics_process(delta: float) -> void:
 	# Prujezdy krizovatkami v poradi
 	if running:
 		var cp := checkpoints[next_cp]
-		if Vector2(p.x - cp.x, p.z - cp.z).length() < GATE_RADIUS:
+		if Vector2(p.x - cp.x, p.z - cp.z).length() < GATE_RADIUS and absf(p.y - cp.y) < 9.0:
 			next_cp = (next_cp + 1) % n
 			checkpoint_passed.emit(next_cp, n)
 	for i in _markers.size():

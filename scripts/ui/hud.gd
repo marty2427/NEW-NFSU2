@@ -133,7 +133,7 @@ func _ready() -> void:
 		"W/S nebo šipky ... plyn / brzda / couvání      A/D ... zatáčení",
 		"MEZERNÍK ... ruční brzda      SHIFT ... nitro      C ... kamera      Q ... pohled vzad",
 		"TAB ... mapa města      O ... další okruh      T ... na start okruhu      P ... tréninková plocha",
-		"R ... postavit auto      1 / 2 / 3 ... změna auta",
+		"R ... postavit auto      1 až 8 nebo N ... změna auta",
 		"M ... zvuk      F6 ... znovu načíst auta.cfg",
 		"F5 ... kvalita grafiky      F7 ... varianta řízení      F8 ... den / noc      K ... test poškození",
 		"F3 ... FPS      F11 ... celá obrazovka",

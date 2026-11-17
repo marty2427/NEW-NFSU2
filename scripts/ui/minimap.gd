@@ -8,6 +8,7 @@ const VIEW_M := 320.0          # kolik metru je videt od auta k okraji mapy
 const C_ROAD := Color(0.82, 0.86, 0.95, 0.5)
 const C_MAIN := Color(0.95, 0.96, 1.0, 0.8)
 const C_HIGHWAY := Color(1.0, 0.7, 0.25, 0.9)
+const C_MAGISTRALA := Color(1.0, 0.35, 0.4, 0.9)
 const C_RIVER := Color(0.15, 0.4, 0.8, 0.75)
 const C_CIRCUIT := Color(0.15, 0.85, 1.0, 0.95)
 const C_NEXT := Color(0.35, 1.0, 0.45)
@@ -72,7 +73,7 @@ func _draw() -> void:
 	var origin := Vector2(car.global_position.x, car.global_position.z)
 
 	draw_circle(c, RADIUS + 5.0, Color(0.025, 0.03, 0.055, 0.66))
-	if origin.distance_to(Vector2.ZERO) < city_map.radius * 1.3:
+	if origin.distance_to(Vector2.ZERO) < city_map.radius * 1.4:
 		_line(city_map.river, origin, right, fwd, scale_px, C_RIVER, 120.0 * scale_px)
 	# Ulice: nejdriv obycejne, pak hlavni tahy, nakonec okruh navrch
 	var near := city_map.edges_near(origin, VIEW_M + 40.0)
@@ -84,7 +85,7 @@ func _draw() -> void:
 			var layer := 2 if on_circuit else (1 if main else 0)
 			if layer != pass_index:
 				continue
-			var col := C_CIRCUIT if on_circuit else (C_HIGHWAY if cls == "dalnice" else (C_MAIN if main else C_ROAD))
+			var col := C_CIRCUIT if on_circuit else (C_HIGHWAY if cls == "dalnice" else (C_MAGISTRALA if cls == "magistrala" else (C_MAIN if main else C_ROAD)))
 			var width := 5.0 if on_circuit else (4.5 if main else 3.0)
 			_line(city_map.polylines[e], origin, right, fwd, scale_px, col, width)
 
