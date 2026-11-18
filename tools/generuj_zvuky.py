@@ -113,6 +113,35 @@ def main():
     blow *= 0.7 + 0.3 * np.sin(2 * np.pi * 38.0 * t)          # "trepotani" odfukoveho ventilu
     save("turbo_odfuk.wav", blow, 0.8)
 
+    # Rozbite sklo: kratky praskot + desitky cinkajicich strepu
+    def glass(seconds, seed):
+        g = np.random.default_rng(seed)
+        n = int(seconds * SR)
+        t = np.arange(n) / SR
+        x = highpass(g.standard_normal(n), 2500) * np.exp(-t * 28.0) * 1.2
+        for _ in range(55):
+            t0 = g.uniform(0.0, seconds * 0.7) ** 1.6 / (seconds * 0.7) ** 0.6
+            f = g.uniform(2800, 9500)
+            d = g.uniform(25, 70)
+            k = int(t0 * SR)
+            tt = t[: n - k]
+            x[k:] += g.uniform(0.1, 0.45) * np.sin(2 * np.pi * f * tt + g.uniform(0, 6.3)) * np.exp(-tt * d)
+        return x
+    save("sklo_1.wav", glass(0.9, 11), 0.8)
+    save("sklo_2.wav", glass(1.1, 12), 0.8)
+
+    # Odpadly dil: tupy uder plechu o zem + kovove zazvoneni
+    def clank(seconds, seed):
+        g = np.random.default_rng(seed)
+        n = int(seconds * SR)
+        t = np.arange(n) / SR
+        x = lowpass(g.standard_normal(n), 900) * np.exp(-t * 22.0) * 1.5
+        for f, a, d in [(310, 0.5, 9.0), (720, 0.35, 12.0), (1460, 0.25, 15.0), (2350, 0.15, 20.0)]:
+            x += a * np.sin(2 * np.pi * f * g.uniform(0.95, 1.05) * t) * np.exp(-t * d)
+        return x
+    save("dil_1.wav", clank(0.8, 21), 0.8)
+    save("dil_2.wav", clank(0.7, 22), 0.8)
+
 
 if __name__ == "__main__":
     main()

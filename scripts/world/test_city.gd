@@ -50,6 +50,10 @@ func _ready() -> void:
 			LapRecords.enabled = false
 		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap=") or arg.begins_with("--walltest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
+		if arg.begins_with("--demotest="):
+			_testing = true
+			LapRecords.enabled = false
+			add_child.call_deferred(load("res://scripts/dev/demo_test.gd").new())
 
 
 func _loading_screen() -> CanvasLayer:
@@ -123,6 +127,7 @@ func spawn_car(id: String, xform: Transform3D) -> void:
 	car.add_child(PlayerController.new())
 	car.add_child(CarAudio.new())
 	car.exploded.connect(_on_car_exploded)
+	car.burning.connect(func(_c): hud.show_message("AUTO HOŘÍ! Za chvíli vybuchne", 3.0))
 	camera.target = car
 	hud.car = car
 	circuit.car = car

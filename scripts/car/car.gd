@@ -10,6 +10,9 @@ signal exploded(car: Car)
 signal impact(car: Car, strength: float, position: Vector3)
 signal damage_changed(car: Car, damage: float)
 signal gear_changed(car: Car, gear: int)
+signal glass_broken(car: Car, position: Vector3)
+signal burning(car: Car)
+signal part_detached(car: Car, part_name: String)
 
 const GRAVITY := 9.8
 const KMH := 3.6
@@ -22,6 +25,7 @@ const TRACTION := 1.5             # arkadova trakce pri zrychleni (nezavisi na m
 
 var t: CarTuning
 var model: CarModel
+var demolition: CarDamage
 
 # --- Vstupy (hrac nebo pozdeji AI) ---
 var in_throttle := 0.0
@@ -54,6 +58,7 @@ var _damage_pull := 0.0            # poskozene auto tahne do strany
 var _smoke: GPUParticles3D
 var _heavy_smoke: GPUParticles3D
 var _fire: GPUParticles3D
+var _burn_time := 0.0              # jak dlouho auto hori (po case vybuchne)
 var _last_impact_time := 0.0
 var _pending_impact: Dictionary = {}
 var _upside_down_time := 0.0
@@ -94,7 +99,7 @@ func setup(new_id: String) -> void:
 	car_id = new_id
 	t = CarTuning.load_car(car_id, Hra.profile)
 	for child in get_children():
-		if String(child.name) in ["Vzhled", "Kolize", "KolizeKabina"]:
+		if String(child.name) in ["Vzhled", "Kolize", "KolizeKabina", "Demolice"]:
 			remove_child(child)
 			child.queue_free()
 	_smoke = null
@@ -144,6 +149,10 @@ func setup(new_id: String) -> void:
 	_grip_now = 1.0
 	_setup_drivetrain()
 	_setup_effects()
+	demolition = CarDamage.new()
+	demolition.name = "Demolice"
+	add_child(demolition)
+	demolition.setup(self)
 	repair()
 
 
@@ -199,6 +208,7 @@ func repair() -> void:
 	destroyed = false
 	nitro = 1.0
 	_damage_pull = 0.0
+	_burn_time = 0.0
 	if model and model.paint:
 		model.paint.albedo_color = t.barva
 		model.paint.metallic = 0.35
@@ -248,6 +258,13 @@ func _physics_process(delta: float) -> void:
 		var imp := _pending_impact
 		_pending_impact = {}
 		_on_impact(imp.dv, imp.pos, imp.normal, imp.collider)
+	# Horici auto po chvili vybuchne (jde utect nebo dojet do cile)
+	if _fire and not destroyed:
+		if _burn_time == 0.0:
+			burning.emit(self)
+		_burn_time += delta
+		if _burn_time > t.cas_horeni:
+			explode()
 	if destroyed:
 		in_throttle = 0.0
 		in_brake = 0.0
@@ -614,6 +631,8 @@ func _on_impact(dv: float, pos: Vector3, normal: Vector3, collider: Object) -> v
 		if is_player:
 			for cam in get_tree().get_nodes_in_group("camera_shake"):
 				cam.call("add_shake", clampf(dv / 25.0, 0.03, 0.8))
+	if demolition:
+		demolition.hit(pos, dv)
 	var strength := dv - t.prah_poskozeni
 	if strength <= 0.0:
 		return
@@ -634,6 +653,8 @@ func apply_damage(amount: float) -> void:
 	model.paint.albedo_color = t.barva.lerp(t.barva.darkened(0.5), d * 0.6)
 	model.paint.roughness = lerpf(0.3, 0.65, d)
 	model.paint.clearcoat = 1.0 - d * 0.8
+	if damage >= 80.0 and demolition:
+		demolition.crack_all()
 	_update_damage_effects()
 	damage_changed.emit(self, damage)
 	if damage >= 100.0:
@@ -684,10 +705,8 @@ func explode() -> void:
 	model.head_mat.emission_energy_multiplier = 0.0
 	for beam in model.beams:
 		beam.visible = false
-	for part_name in ["kapota", "kufr", "dvere_lp", "dvere_pp", "naraznik_predni", "naraznik_zadni"]:
-		var part: Node3D = model.parts.get(part_name)
-		if part and is_instance_valid(part) and model.is_ancestor_of(part):
-			detach_part(part, 7.0)
+	if demolition:
+		demolition.explode_all()
 	_update_damage_effects()
 	damage_changed.emit(self, damage)
 	exploded.emit(self)

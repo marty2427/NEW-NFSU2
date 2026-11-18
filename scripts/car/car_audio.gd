@@ -65,6 +65,10 @@ func _ready() -> void:
 		car.impact.connect(_on_impact)
 	if car.has_signal("exploded"):
 		car.exploded.connect(func(_c): _play("naraz_3.wav", 4.0, 0.6))
+	if car.has_signal("glass_broken"):
+		car.glass_broken.connect(func(_c, _p): _play(["sklo_1.wav", "sklo_2.wav"][randi() % 2], -3.0, randf_range(0.9, 1.15)))
+	if car.has_signal("part_detached"):
+		car.part_detached.connect(func(_c, _n): _play(["dil_1.wav", "dil_2.wav"][randi() % 2], -2.0, randf_range(0.85, 1.1)))
 
 
 func _stream(file: String, looped: bool) -> AudioStream:

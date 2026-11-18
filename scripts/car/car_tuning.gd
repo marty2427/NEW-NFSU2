@@ -54,6 +54,7 @@ var nitro_dobijeni := 0.025
 var nitro_za_drift := 0.12
 var odolnost := 1.0
 var prah_poskozeni := 7.0
+var cas_horeni := 8.0          # s: jak dlouho auto hori, nez vybuchne
 
 
 ## Nacte auto: [vychozi] -> [auto] -> [profil_<varianta>] (varianta rizeni ma posledni slovo).

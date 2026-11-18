@@ -3,15 +3,15 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (9. kolo – oprava křižovatek ve svahu, řízení, kamera, časy kol, dvě města + velké hory, skokánky, nitro, zvuky): HOTOVO, čeká na otestování hráčem (hráč má sepsané otázky).**
-(Fáze 2 – plná demolice – začne až po souhlasu.)
+**Fáze 2 – demolice, 1. krok (promáčkliny, praskající a rozbitá skla, uvolněné a odpadlé díly, hoření → výbuch): HOTOVO, čeká na otestování.**
+Hráč ještě otestuje 9. kolo a odpoví na otázky. Čeká se na zapojení 50 nových aut (modely jsou v `assets/cars`, seznam v `assets/cars/SEZNAM_NOVYCH_AUT.md`).
 
 ## Fáze
 | # | Fáze | Stav |
 |---|------|------|
 | 1 | Základ: projekt, auto, jízda, kamera, základní poškození a výbuch | ✅ hotovo |
 | 1b | Přepracování: skutečná auta, styl NFSU2, velká mapa, tachometr, nová fyzika | ✅ hotovo (čeká na zpětnou vazbu) |
-| 2 | Plná demolice: deformace, odpadávající díly, kouř/oheň, rozbitné okolí, zvuky | ⏳ další |
+| 2 | Plná demolice: deformace, odpadávající díly, kouř/oheň, rozbitné okolí, zvuky | 🔧 probíhá (1. krok hotov) |
 | 3 | Zbraně a nástrahy | – |
 | 4 | Soupeři (AI) | – |
 | 5 | Neonové město a tratě, HUD závodu | – |
@@ -130,6 +130,26 @@
 - **Tachometr potřetí** – styl novějších NFS: žádný kotouč, tenký oblouk s dílky, svítící „ocas“ za ručičkou, velká rychlost,
   převod v šikmém rámečku, nitro jako řada šikmých dílků. Číslice rovné (písmo Oxanium).
 - Načtení hry trvá o ~6–8 s déle (staví se město). Kdyby vadilo → uložit postavené město do souboru.
+
+## Fáze 2, 1. krok – demolice auta (`scripts/car/car_damage.gd`)
+Postup rozpadu: promáčkliny → praskající skla → uvolněné díly (plandají) → rozbitá skla → odpadlé díly
+→ kouř (50 %) → černý kouř (75 %) → oheň (90 %) → po 8 s hoření výbuch (`cas_horeni` v auta.cfg) nebo hned při 100 %.
+- **Promáčkliny**: v místě nárazu se posunou vrcholy sítí karoserie dovnitř (síla a poloměr podle rychlosti nárazu,
+  odolnosti auta, max. 32 cm), „zvlnění“ plechu a natočení normál, aby byla promáčklina vidět i ve světle.
+  Funguje u všech aut bez nastavování. Mřížka vrcholů se počítá ve vlákně po postavení auta, samotné promáčkliny
+  taky ve vlákně; hlavní vlákno jen znovu sestaví dotčené sítě (naměřeno do ~6 ms). Vnitřek auta (motor, sedadla)
+  se nepromačkává. Kolizní krabice auta se nemění.
+- **Skla**: každé okno zvlášť (sklo se rozdělí na souvislé kusy). Nejdřív praskne (textura s paprskovitými prasklinami),
+  pak se rozbije a vysypou se střepy; čelní a zadní sklo vydrží víc. Při 80 % poškození praskne všechno, při výbuchu
+  se všechno rozbije. Zvuk `sklo_1/2.wav`.
+  Okna se najdou podle předvolby „sklo“ v `modely_aut.cfg`, podle průhlednosti materiálu nebo jména.
+  **Silvia, RX-7 a BMW M3 zatím skla nemají** (okna nejsou poznat: neprůhledný materiál / jedna textura) – doplnit názvy materiálů.
+- **Díly** (`dily` v `modely_aut.cfg`): kapota, kufr, dveře, nárazníky, blatníky. Po prvních nárazech se uvolní
+  a plandají na pantu (kapota/kufr podle brzdění, dveře v zatáčkách, nárazník visí na jednom konci), dalším poškozením
+  upadnou a zůstanou ležet (zvuk `dil_1/2.wav`). Nastaveno: Octavia (10 dílů), Mustang (6), Silvia (4), Supra (8), Impreza (zadní difuzor).
+  **Skyline, RX-7 a BMW nemají díly jako samostatné části modelu** → zatím jen promáčkliny a skla.
+- **Test**: `godot --path . -- --demotest=octavia [--shots=SLOZKA]` – zmrazené auto dostane 12 umělých nárazů
+  ze všech stran, vypíše stav skel a dílů a časy; se `--shots` fotí auto.
 
 ## 9. kolo – zpětná vazba k 8. kolu (přání hráče)
 - **Neviditelné překážky a křivé chodníky u křižovatek ve svahu** (hlavní stížnost):
@@ -280,3 +300,5 @@
   nebo s `--car=octavia` (hotové auto).
 - Snímky města: `godot --path . -- --snapshot=SLOZKA [--pohledy=mapa,start,reka,stare,mrizka,dalnice,plocha,okruh0..7] [--tacho=otacky,rychlost,nitro] [--noc] [--mapa] [--auta=id,id] [--nitro=id,id]`
 - Ladicí klávesa K = +25 % poškození.
+- Test demolice: `godot --path . -- --demotest=octavia [--shots=SLOZKA]`; výpis dílů/skel modelu:
+  `godot --headless --path . -s res://scripts/dev/part_names.gd -- id1 id2`, materiály: `-s res://scripts/dev/mat_names.gd -- id`

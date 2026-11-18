@@ -179,6 +179,52 @@ static func make_nitro_flame() -> NitroFlame:
 #  Jednorazove efekty
 # ---------------------------------------------------------------------
 
+## Strepy rozbiteho skla: drobne lesklé kousky se vysypou z okna a padaji.
+static func spawn_glass(parent: Node, pos: Vector3, extent: Vector3, velocity: Vector3) -> void:
+	var p := GPUParticles3D.new()
+	p.amount = 90
+	p.lifetime = 1.4
+	p.one_shot = true
+	p.explosiveness = 0.92
+	p.visibility_aabb = AABB(Vector3(-6, -6, -6), Vector3(12, 12, 12))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = (extent.abs() * 0.5).max(Vector3.ONE * 0.05)
+	pm.direction = Vector3(0, 0.5, 0)
+	pm.spread = 180.0
+	pm.initial_velocity_min = 1.0
+	pm.initial_velocity_max = 4.0
+	pm.gravity = Vector3(0, -9.8, 0)
+	pm.angle_min = 0.0
+	pm.angle_max = 360.0
+	pm.angular_velocity_min = -720.0
+	pm.angular_velocity_max = 720.0
+	pm.scale_min = 0.4
+	pm.scale_max = 1.3
+	pm.color_ramp = _ramp([Color(0.85, 0.95, 1.0, 0.95), Color(0.7, 0.85, 0.95, 0.9), Color(0.6, 0.75, 0.85, 0.0)], [0.0, 0.7, 1.0])
+	p.process_material = pm
+	var q := BoxMesh.new()
+	q.size = Vector3(0.045, 0.006, 0.035)
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(0.85, 0.95, 1.0, 0.85)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.metallic = 0.6
+	m.roughness = 0.05
+	m.emission_enabled = true
+	m.emission = Color(0.5, 0.6, 0.7)
+	m.emission_energy_multiplier = 0.4
+	q.material = m
+	p.draw_pass_1 = q
+	parent.add_child(p)
+	p.global_position = pos
+	# strepy si odnesou cast rychlosti auta
+	pm.initial_velocity_min += velocity.length() * 0.2
+	pm.direction = (velocity * 0.3 + Vector3(0, 1.5, 0)).normalized()
+	p.emitting = true
+	_auto_free(p, 2.0)
+
+
 ## Jiskry pri narazu kovu.
 static func spawn_sparks(parent: Node, pos: Vector3, normal: Vector3, amount := 40) -> void:
 	var p := GPUParticles3D.new()
