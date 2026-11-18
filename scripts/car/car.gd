@@ -58,7 +58,7 @@ var _last_impact_time := 0.0
 var _pending_impact: Dictionary = {}
 var _upside_down_time := 0.0
 var _tire_smoke: Array[GPUParticles3D] = []
-var _nitro_flames: Array[GPUParticles3D] = []
+var _nitro_flames: Array[NitroFlame] = []
 var _steer_input := 0.0            # vyhlazeny vstup volantu
 var _wheelbase := 2.7
 var _yaw_inertia := 2500.0
@@ -287,7 +287,8 @@ func _physics_process(delta: float) -> void:
 	var space := get_world_3d().direct_space_state
 	var ray_len := t.zdvih_pruziny + model.wheel_radius
 	var mass_per_wheel := mass / 4.0
-	var spring_k := mass_per_wheel * GRAVITY / maxf(t.propad_podvozku, 0.02)
+	var g_eff := GRAVITY * (1.0 + t.extra_gravitace)
+	var spring_k := mass_per_wheel * g_eff / maxf(t.propad_podvozku, 0.02)
 	var damper := 2.0 * sqrt(spring_k * mass_per_wheel) * t.tlumeni
 	var driven_count := 0
 	for w in _wheels:
@@ -321,7 +322,9 @@ func _physics_process(delta: float) -> void:
 		wheel_node.position.y = mount_y - (dist - model.wheel_radius)
 
 		# Pruzina + tlumic
-		var spring_force := clampf(spring_k * compression + damper * comp_vel, 0.0, mass * GRAVITY * 3.0)
+		# Tlumic: pri prudkem stlaceni (obrubnik, hrbol) mekci, aby auto nevystrelilo nahoru
+		var damp_force := damper * comp_vel * (0.45 if comp_vel > 0.0 else 1.0)
+		var spring_force := clampf(spring_k * compression + damp_force, 0.0, mass_per_wheel * g_eff * 3.2)
 		w.load = spring_force
 		var offset := mount - global_position
 		apply_force(normal * spring_force, offset)
@@ -364,6 +367,9 @@ func _physics_process(delta: float) -> void:
 			# Vzhled: kola jsou natocena viditelne i ve vysoke rychlosti
 			wheel_node.rotation.y = lerp_angle(wheel_node.rotation.y, steer_angle, 0.35)
 
+	# Arkadova "tiha": auto je pritlacene k silnici a po skoku rychleji dopadne (neplachti)
+	apply_central_force(Vector3.DOWN * mass * GRAVITY * t.extra_gravitace)
+
 	# --- Jizda v rovine (arkadovy model) ---
 	var v_flat := linear_velocity - up * linear_velocity.dot(up)
 	var heading := (-bas.z - up * (-bas.z).dot(up)).normalized()
@@ -385,6 +391,10 @@ func _physics_process(delta: float) -> void:
 	var a_yaw := t.ostrost_zataceni * lerpf(1.0, t.ostrost_ve_vysoke_rychlosti, speed_part) * wet
 	if braking > 0.0:
 		a_yaw *= 1.0 + 0.12 * braking          # brzda v zatacce pomaha auto stocit
+	# Ubrany plyn v zatacce: vaha na predni kola, auto se ochotneji stoci (jako v NFS)
+	var lift := clampf(1.0 - in_throttle, 0.0, 1.0) * clampf((v - 6.0) / 10.0, 0.0, 1.0) * absf(steer_cmd)
+	a_yaw *= 1.0 + t.zataceni_bez_plynu * lift
+	a_grip *= 1.0 + 0.1 * lift
 	var r_min := _wheelbase / tan(deg_to_rad(t.max_natoceni_kol))
 	var kappa := minf(1.0 / r_min, a_yaw / maxf(v * v, 0.01))   # nejvetsi zakriveni (1/m)
 	# Natoceni kol (vzhled): podle volantu, ve vysoke rychlosti mensi, ale porad viditelne
@@ -402,12 +412,12 @@ func _physics_process(delta: float) -> void:
 			grip_target = t.prilnavost_rucni_brzda if in_handbrake else t.prilnavost_v_driftu
 			target_yaw = steer_cmd * t.otaceni_v_driftu * clampf(v / 12.0, 0.0, 1.0)
 			if absf(_steer_input) < 0.15 and not in_handbrake:
-				target_yaw = -slip_angle * 3.0      # volant rovne = auto se samo srovnava
+				target_yaw = clampf(-slip_angle * 2.0, -2.0, 2.0)   # volant rovne = auto se samo srovnava
 			elif signf(target_yaw) == side:
 				target_yaw *= 1.0 - smoothstep(beta_lim * 0.6, beta_lim, absf(slip_angle))
-			# Smer jizdy se stoci za predkem auta, rychlost se skoro neztrati
-			var keep := 1.0 if in_throttle > 0.1 else 0.5
-			apply_central_force((heading * v - v_flat) * mass * 1.4 * t.pomoc_driftu * keep)
+			# Smer jizdy se jen mirne stoci za predkem auta (auto se smi pretocit, kdyz se to prezene)
+			var keep := 1.0 if in_throttle > 0.1 else 0.4
+			apply_central_force((heading * v - v_flat) * mass * t.vedeni_driftu * t.pomoc_driftu * keep)
 		else:
 			# PRILNAVOST: auto se otaci podle volantu; pri smyku nad povoleny uhel se otaceni brzdi
 			beta_lim = deg_to_rad(t.max_uhel_smyku) * lerpf(1.0, 0.5, speed_part)
@@ -415,16 +425,23 @@ func _physics_process(delta: float) -> void:
 				beta_lim *= 1.0 + t.smyk_plynem * in_throttle * (1.0 - v / 32.0)
 			if in_handbrake:
 				grip_target = 0.6
-				beta_lim *= 2.0
-				a_yaw *= 1.25
+				beta_lim *= 1.6
+				a_yaw *= 1.1
 			target_yaw = clampf(steer_cmd * kappa * v_f, -t.max_otaceni, t.max_otaceni)
 			if signf(target_yaw) == side and v > 4.0:
 				# Auto uz klouze ve smeru zatacky: dal se toci jen tak, jak unese prilnavost
 				var path_yaw := minf(absf(target_yaw), a_grip * _grip_now / v) * side
 				target_yaw = lerpf(target_yaw, path_yaw, smoothstep(beta_lim * 0.55, beta_lim, absf(slip_angle)))
+			# Prudka zatacka v rychlosti: auto ubere rychlost (smykem pneumatik), aby zatacku vybralo
+			if v > 12.0 and absf(steer_cmd) > 0.2 and in_throttle < 0.7:
+				var a_need := absf(steer_cmd) * kappa * v * v
+				var over := a_need - a_grip * _grip_now
+				if over > 0.0:
+					var fade := clampf((v - 12.0) / 15.0, 0.0, 1.0)
+					apply_central_force(-heading * signf(v_f) * mass * minf(over, a_grip * 0.5) * t.ubrani_v_zatacce * fade)
 		# Pojistka proti roztoceni: nad povoleny uhel se auto vraci do smeru jizdy
 		var excess := absf(slip_angle) - beta_lim
-		if excess > 0.0 and v > 3.0 and absf(slip_angle) < 2.2:
+		if excess > 0.0 and v > 3.0 and absf(slip_angle) < 2.2 and not _drift_mode:
 			target_yaw -= side * excess * 5.0
 		_grip_now = move_toward(_grip_now, grip_target, (6.0 if grip_target < _grip_now else 2.0) * delta)
 
@@ -487,7 +504,7 @@ func _update_drift_mode(delta: float, v_abs: float, fwd_speed: float) -> void:
 		return
 	var active := in_throttle > 0.1 or in_handbrake
 	_drift_idle = 0.0 if active else _drift_idle + delta
-	if (drift_angle < 7.0 and not in_handbrake) or v_flat < 4.0 or drift_angle > 110.0 or _drift_idle > 0.4 or grounded_wheels == 0:
+	if (drift_angle < 7.0 and not in_handbrake) or v_flat < 4.0 or drift_angle > 165.0 or _drift_idle > 0.4 or grounded_wheels == 0:
 		_drift_mode = false
 
 

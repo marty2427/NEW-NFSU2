@@ -73,8 +73,7 @@ func _draw() -> void:
 	var origin := Vector2(car.global_position.x, car.global_position.z)
 
 	draw_circle(c, RADIUS + 5.0, Color(0.025, 0.03, 0.055, 0.66))
-	if origin.distance_to(Vector2.ZERO) < city_map.radius * 1.4:
-		_line(city_map.river, origin, right, fwd, scale_px, C_RIVER, 120.0 * scale_px)
+	_line(city_map.river, origin, right, fwd, scale_px, C_RIVER, 120.0 * scale_px)
 	# Ulice: nejdriv obycejne, pak hlavni tahy, nakonec okruh navrch
 	var near := city_map.edges_near(origin, VIEW_M + 40.0)
 	for pass_index in 3:

@@ -131,9 +131,19 @@ func _draw_marker() -> void:
 	var p := _to_screen(Vector2(car.global_position.x, car.global_position.z))
 	var fwd3: Vector3 = -car.global_basis.z
 	var ang := atan2(fwd3.x, -fwd3.z)
-	var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 200.0)
-	_marker.draw_circle(p, 16.0 + pulse * 6.0, Color(1.0, 0.85, 0.2, 0.25))
+	var t := Time.get_ticks_msec() / 1000.0
+	# Vyrazna znacka auta: zamerovaci kriz pres celou mapu, pulzujici kruhy a velka sipka
+	var cross := Color(1.0, 0.25, 0.6, 0.35)
+	_marker.draw_line(Vector2(p.x, 0), Vector2(p.x, size.y), cross, 1.5)
+	_marker.draw_line(Vector2(0, p.y), Vector2(size.x, p.y), cross, 1.5)
+	for k in 2:
+		var ph := fmod(t * 0.9 + k * 0.5, 1.0)
+		_marker.draw_arc(p, 14.0 + ph * 46.0, 0.0, TAU, 48, Color(1.0, 0.25, 0.6, 0.9 * (1.0 - ph)), 3.0, true)
+	_marker.draw_circle(p, 22.0, Color(0.0, 0.0, 0.0, 0.55))
+	_marker.draw_arc(p, 22.0, 0.0, TAU, 40, Color(1.0, 0.25, 0.6), 3.0, true)
 	_marker.draw_set_transform(p, ang, Vector2.ONE)
-	_marker.draw_colored_polygon(PackedVector2Array([Vector2(0, -14), Vector2(9, 10), Vector2(0, 5), Vector2(-9, 10)]), Color(1.0, 0.85, 0.2))
-	_marker.draw_polyline(PackedVector2Array([Vector2(0, -14), Vector2(9, 10), Vector2(0, 5), Vector2(-9, 10), Vector2(0, -14)]), Color(0, 0, 0, 0.8), 1.5, true)
+	var arrow := PackedVector2Array([Vector2(0, -19), Vector2(13, 13), Vector2(0, 6), Vector2(-13, 13)])
+	_marker.draw_colored_polygon(arrow, Color(1.0, 0.95, 0.3))
+	arrow.append(arrow[0])
+	_marker.draw_polyline(arrow, Color(0, 0, 0, 0.9), 2.0, true)
 	_marker.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

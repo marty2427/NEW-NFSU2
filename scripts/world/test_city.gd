@@ -2,7 +2,7 @@ extends Node3D
 ## Velke mesto s nepravidelnymi ulicemi, mestskym okruhem a treninkovou plochou.
 ## Ve dne (vyvoj) nebo v noci s neonovou atmosferou (F8). Varianta rizeni F7.
 
-var car: RigidBody3D   # Car nebo GevpCar (podle varianty rizeni F7)
+var car: Car
 var camera: ChaseCamera
 var hud: HUD
 var city: CityBuilder
@@ -47,6 +47,7 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest="):
 			_testing = true
+			LapRecords.enabled = false
 		if arg == "--autotest" or arg.begins_with("--speedtest=") or arg.begins_with("--handlingtest=") or arg.begins_with("--lap=") or arg.begins_with("--walltest="):
 			add_child(load("res://scripts/dev/autotest.gd").new())
 
@@ -111,14 +112,11 @@ func spawn_car(id: String, xform: Transform3D) -> void:
 	if car and is_instance_valid(car):
 		remove_child(car)
 		car.queue_free()
-	if Hra.profile == "gevp":
-		car = GevpCar.create(id, true)
-	else:
-		var c := Car.new()
-		c.name = "AutoHrace"
-		c.car_id = id
-		c.is_player = true
-		car = c
+	var c := Car.new()
+	c.name = "AutoHrace"
+	c.car_id = id
+	c.is_player = true
+	car = c
 	car.transform = xform
 	add_child(car)
 	city.load_around(xform.origin)

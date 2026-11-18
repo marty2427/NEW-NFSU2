@@ -3,7 +3,7 @@
 > Tento soubor si přečti na začátku každé práce na projektu.
 
 ## Aktuální stav
-**Fáze 1b (8. kolo – 5 nových aut: Skyline R34, Supra MK4, RX-7 FD, Impreza WRX STI, M3 E46; předtím terén, mosty, kopce, magistrála, mapa 2× větší): HOTOVO, čeká na otestování hráčem (hráč má sepsané otázky).**
+**Fáze 1b (9. kolo – oprava křižovatek ve svahu, řízení, kamera, časy kol, dvě města + velké hory, skokánky, nitro, zvuky): HOTOVO, čeká na otestování hráčem (hráč má sepsané otázky).**
 (Fáze 2 – plná demolice – začne až po souhlasu.)
 
 ## Fáze
@@ -131,6 +131,38 @@
   převod v šikmém rámečku, nitro jako řada šikmých dílků. Číslice rovné (písmo Oxanium).
 - Načtení hry trvá o ~6–8 s déle (staví se město). Kdyby vadilo → uložit postavené město do souboru.
 
+## 9. kolo – zpětná vazba k 8. kolu (přání hráče)
+- **Neviditelné překážky a křivé chodníky u křižovatek ve svahu** (hlavní stížnost):
+  roh chodníku je teď pás mezi okrajem vozovky a okrajem bloku (nezasahuje do silnice), výška rohu podle obou ulic,
+  a ulice se u křižovatky zkracují i o šířku chodníku (generátor i `CityMap` stejným vzorcem, max. 48 m).
+  Nová automatická kontrola `scenes/dev/road_check.tscn` projede celou mapu paprsky:
+  **překážky 0** (dřív 16 míst), „schody“ nad 9 cm jen na 93 místech a max. 22 cm (lom povrchu ve svahu, auto přejede).
+- **Řízení**: jen ARKÁDA a SPORT (F7), drift a GEVP smazány. Víc zatáčí hlavně bez plynu (`zataceni_bez_plynu`),
+  v ostré zatáčce bez plynu auto trochu zpomalí (`ubrani_v_zatacce`). Ruční brzda otáčí méně (`otaceni_v_driftu`),
+  ale bez limitu – auto se dá přetočit až o 180°. Slabší brzdy (10 500). Těžší auta: přídavná gravitace
+  `extra_gravitace = 0.6` a měkčí odskok tlumičů → méně odskakují z obrubníků a hrbolů.
+  Test: všech 8 aut × oba režimy objelo okruh Centrum; M3 objelo všech 8 okruhů.
+- **Kamera** (C přepíná): Blízko, Za autem, Výš (výchozí), Zhora, Ptačí, Kapota. Ve svahu se kamera naklání s autem
+  (vyhlazeně), takže z kopce je vidět silnice před autem.
+- **Časy kol**: kola se počítají dál, HUD ukazuje kolo, poslední, nejlepší a **rekord**. Rekordy pro okruh + auto + řízení
+  se ukládají do `zaznamy/rekordy.json`, každé kolo do `zaznamy/casy_kol.csv` (ve složce hry, aktualizace je nesmaže,
+  do gitu nejdou). T = na start okruhu.
+- **Navigace**: nahoře uprostřed ukazatel příští zatáčky (šipka + vzdálenost, blíž = větší, těsně před ní bliká),
+  větší svítící šipky v zatáčkách. Křižovatky mají přechody pro chodce a u větších semafory → jsou poznat z dálky.
+  Velká mapa (TAB): auto má pulzující kruhy, velkou šipku a zaměřovací kříž přes celou mapu.
+- **Mapa** (`tools/generuj_mesto.py`, 3571 ulic, 2298 křižovatek): **dvě města** vedle sebe (A a protáhlé B),
+  dohromady ovál; řeka přes obě; **pás hor na severu** (výšky až 800 m, hřebenovka, 2 serpentiny, 3 výjezdy, okruhy přes vrcholy);
+  **magistrála** (39,8 km) jako nepravidelný ovál přes obě města – zatáčky doleva i doprava, dlouhé rovinky mezi městy,
+  12 nájezdů; 8 náměstí, 5 tréninkových ploch (10–47 ha). Okruhy: Centrum, Nábřeží, Dálnice A, Velký okruh,
+  Magistrála, Kopce, Centrum B, Dálnice B (okruhy „Dvě města“ a „Hory B“ se zatím nepodařilo sestavit).
+- **Tréninkové plochy**: 6 skokánků (výška 0,8–6 m) s volným rozjezdem a dopadem a svítícími pruhy před nájezdem.
+- **Tachometr**: ostřejší – plynulý stín místo vrstvených kruhů, „ocas“ ručičky jako jeden plynulý přechod,
+  vyhlazené okraje; nitro jako **plynulý šikmý pruh** (jako NFSU2).
+- **Plamen nitra**: nový – dva kužele (zelenkavý plášť + svítivé jádro), „diamanty“, mihotání a zelené světlo pod autem
+  (`scripts/fx/nitro_flame.gd`, `shaders/nitro_flame.gdshader`).
+- **Zvuky motorů**: všechny kromě BMW (to se hráči líbilo) jsou hlubší a hladší – měkčí náběh pulsů, menší rozdíly mezi válci,
+  méně náhodného „poskakování“ (to dělalo dojem dvouválcové sekačky), nižší rezonance. Neověřeno poslechem.
+
 ## 8. kolo – 5 nových aut (modely dodal hráč přes Cowork, `assets/cars/`)
 - **Auta** (klávesy 1–8 nebo N): Octavia, Mustang, Silvia, **Skyline R34** (AWD, 235 kW, stabilní, „Godzilla“),
   **Supra MK4** (RWD, 250 kW, nejrychlejší na rovince, na plyn přetáčí), **RX-7 FD** (RWD, 1280 kg, nejhbitější, snadno driftuje,
@@ -216,17 +248,20 @@
 - Skutečný motion blur (Compositor efekt) zvážit ve fázi 7.
 - Výkon na PC Monster ověřit na obřím městě; ladit jde v `city_builder.gd`: `DETAIL_ON/OFF` (dosah lamp a cedulí),
   `BUILDING_VIEW` (dohled domů), a dosah světel lamp v `graphics.gd`.
-- Okolí za městem je prázdná rovina (z ulic není vidět, jen z výšky). Řeka je v úrovni ulic (svět je zatím rovina).
+- Okruhy „Dvě města“ a „Hory B“ – opravit body trasy v generátoru.
+- Grafika aut a města (lepší materiály, detaily budov, odlesky) – hlavně fáze 7, levná vylepšení průběžně.
 - Při exportu do .exe (fáze 7) přidat `data/*.json` a `tuning/*.cfg` do exportovaných souborů.
 - Zatím bez provozu, chodců a bez výškových rozdílů (mosty, tunely) – nápad do fáze 5.
 
 ## Další krok
-- Počkat na zpětnou vazbu k 6. kolu (obří mapa, okruhy, tachometr, FPS) a na odpovědi na otázky z 5. kola
-  (řízení, zvuk motoru), opravit chyby, pak fáze 2.
+- Počkat na zpětnou vazbu k 9. kolu a na odpovědi na otázky, opravit chyby, pak fáze 2 (plná demolice).
 
 ## Vývojářské poznámky
 - Automatický test: `godot --path . -- --autotest [--shots=SLOZKA] [--rychle]`
-- Test řízení: `godot --headless --path . -- [--profil=arkada|sport|drift|gevp] --handlingtest=octavia`
+- Test řízení: `godot --headless --path . -- [--profil=arkada|sport] --handlingtest=octavia`
+- Kontrola povrchu silnic (schody, neviditelné překážky): `godot --headless --path . res://scenes/dev/road_check.tscn`
+  (výstup jde do stderr; při spuštění přes rouru použít `stdbuf -o0 -e0`); detail místa:
+  `godot --headless --path . res://scenes/dev/road_probe.tscn -- --bod=x,z --r=14`
 - Test okruhu s počítačovým jezdcem: `godot --headless --fixed-fps 120 --path . -- --lap=octavia --g=1.5 --okruh=0 --kol=1 --limit=420`
   (`--fixed-fps` = běží rychleji než skutečný čas, `--okruh=0..3`, `--analog` = plynulý volant, `--r=2` = odstup od obrubníku,
   `LAPDEBUG=1` = podrobný výpis; na konci vypíše i měření načítání okolí)
@@ -239,5 +274,5 @@
 - Měření zrychlení: `godot --headless --path . -- --speedtest=octavia`
 - Prohlížeč modelu: `godot --path . res://scenes/dev/model_viewer.tscn -- --view=res://cesta.glb --out=/slozka/prefix`
   nebo s `--car=octavia` (hotové auto).
-- Snímky města: `godot --path . -- --snapshot=SLOZKA [--pohledy=mapa,start,reka,stare,mrizka,dalnice,plocha,okruh0..7] [--tacho=otacky,rychlost,nitro] [--noc] [--mapa]`
+- Snímky města: `godot --path . -- --snapshot=SLOZKA [--pohledy=mapa,start,reka,stare,mrizka,dalnice,plocha,okruh0..7] [--tacho=otacky,rychlost,nitro] [--noc] [--mapa] [--auta=id,id] [--nitro=id,id]`
 - Ladicí klávesa K = +25 % poškození.

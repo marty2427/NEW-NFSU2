@@ -3,7 +3,7 @@ extends CanvasLayer
 ## Herni ukazatele: otackomer/tachometr, drift body, FPS, zpravy.
 ## Poskozeni se ukazuje primo na aute (kour, ohen) a cervenym okrajem obrazovky.
 
-var car: Node:  # Car nebo GevpCar
+var car: Node:
 	set(value):
 		car = value
 		if _tacho:
@@ -22,6 +22,8 @@ var circuit: Circuit:
 			_minimap.circuit = value
 		if _bigmap:
 			_bigmap.circuit = value
+		if _turn:
+			_turn.circuit = value
 
 var city_map: CityMap:
 	set(value):
@@ -33,6 +35,7 @@ var city_map: CityMap:
 var _minimap: Minimap
 var _bigmap: BigMap
 var _lap_label: Label
+var _turn: TurnIndicator
 var _lap_flash := 0.0
 var _tacho: Tachometer
 var _info_label: Label
@@ -98,6 +101,12 @@ func _ready() -> void:
 	_minimap.car = car
 	_minimap.circuit = circuit
 	_minimap.city_map = city_map
+
+	# --- Pristi zatacka (nahore uprostred) ---
+	_turn = TurnIndicator.new()
+	root.add_child(_turn)
+	_place(_turn, Control.PRESET_CENTER_TOP, -130, 10, 130, 230)
+	_turn.circuit = circuit
 
 	# --- Velka mapa (TAB) ---
 	_bigmap = BigMap.new()
@@ -181,7 +190,8 @@ static func format_time(sec: float) -> String:
 
 func _on_lap_finished(time: float, best: float) -> void:
 	_lap_flash = 3.0
-	show_message(("NEJLEPŠÍ KOLO  " if is_equal_approx(time, best) else "KOLO  ") + format_time(time), 3.0)
+	var head := "NOVÝ REKORD!  " if circuit and circuit.new_record else ("NEJLEPŠÍ KOLO  " if is_equal_approx(time, best) else "KOLO  ")
+	show_message(head + format_time(time), 3.5)
 
 
 func show_message(text: String, time := 2.5) -> void:
@@ -215,9 +225,14 @@ func _process(delta: float) -> void:
 			var txt := "KOLO %d   %s" % [circuit.lap_count + 1, format_time(circuit.lap_time)]
 			if circuit.last_time > 0.0:
 				txt += "\nposlední %s   nejlepší %s" % [format_time(circuit.last_time), format_time(circuit.best_time)]
+			if circuit.record_time > 0.0:
+				txt += "\nrekord %s" % format_time(circuit.record_time)
 			_lap_label.text = txt
 		else:
-			_lap_label.text = "OKRUH %s (%.1f km): projeď bránou START" % [circuit.title, circuit.length / 1000.0]
+			var rec := LapRecords.best(circuit.title, str(car.get("car_id")) if car else "", Hra.profile)
+			_lap_label.text = "OKRUH %s (%.1f km): projeď bránou START\nT = na start" % [circuit.title, circuit.length / 1000.0]
+			if rec > 0.0:
+				_lap_label.text += "\nrekord %s" % format_time(rec)
 		_lap_label.modulate = Color(0.4, 1.0, 0.5) if _lap_flash > 0.0 else Color.WHITE
 
 	if car == null or not is_instance_valid(car) or car.t == null:

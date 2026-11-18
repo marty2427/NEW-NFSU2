@@ -3,7 +3,7 @@ extends Node
 ## Zvuky auta: motor (smycky v ruznych otackach, zvlast pod plynem a bez plynu, plynule
 ## se prolinaji), hvizd turba, kvileni pneumatik, nitro, vitr, narazy, preraeni a odfuk turba.
 ## Vsechny zvuky jsou synteticke (tools/generuj_zvuky.py + tools/motor_synth.py).
-## Funguje s Car i GevpCar (cte jen rpm, plyn, rychlost, smyk, nitro).
+## Cte jen rpm, plyn, rychlost, smyk a nitro auta.
 
 const DIR := "res://assets/sounds/"
 ## typ motoru -> otacky, pro ktere existuji smycky (pod plynem / bez plynu); musi sedet s tools/motor_synth.py

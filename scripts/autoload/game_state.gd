@@ -4,13 +4,11 @@ extends Node
 signal profile_changed(profile: String)
 signal daylight_changed(day: bool)
 
-## Varianty rizeni (F7). "gevp" = prevzate rizeni Godot Easy Vehicle Physics.
-const PROFILES := ["arkada", "sport", "drift", "gevp"]
+## Varianty rizeni (F7).
+const PROFILES := ["arkada", "sport"]
 const PROFILE_NAMES := {
 	"arkada": "ARKÁDA (ostré zatáčení)",
 	"sport": "SPORT (realističtější)",
-	"drift": "DRIFT (snadný smyk)",
-	"gevp": "EASY VEHICLE PHYSICS (převzaté)",
 }
 
 var profile := "arkada"

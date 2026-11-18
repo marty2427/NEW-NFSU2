@@ -2,7 +2,8 @@ class_name Tachometer
 extends Control
 ## Pristrojovka ve stylu novejsich zavodnich her (kreslena v kodu): bez tezkeho cifernik-kotouce,
 ## jen tenky oblouk s drobnymi dilky, svitici "ocas" za rucickou, velka rychlost uprostred,
-## rychlostni stupen v sikmem ramecku a nitro jako rada sikmych dilku. Cislice jsou rovne.
+## rychlostni stupen v sikmem ramecku a nitro jako plynuly sikmy pruh. Cislice jsou rovne.
+## Vsechny tvary maji vyhlazene okraje (zadne zubate hrany ani pruhy v pozadi).
 
 const START_DEG := 142.0       # 0 ot./min vlevo dole
 const SWEEP_DEG := 256.0       # po smeru hodinovych rucicek az vpravo dolu
@@ -14,7 +15,7 @@ const C_GREEN := Color(0.35, 1.0, 0.45)
 const C_N2O := Color(0.2, 0.55, 1.0)
 const CAP := 0.69              # vyska cislic pisma Oxanium (podil velikosti)
 
-var car: Node  # Car nebo GevpCar
+var car: Node
 var font_bold: FontVariation
 var font_medium: FontVariation
 var _rpm := 0.0
@@ -22,6 +23,8 @@ var _speed := 0.0
 var _gear_flash := 0.0
 var _last_gear := 1
 var _n2o_glow := 0.0
+var _nitro_shown := 0.0
+var _shade: GradientTexture2D
 
 
 func _ready() -> void:
@@ -35,6 +38,18 @@ func _ready() -> void:
 	font_medium = FontVariation.new()
 	font_medium.base_font = base
 	font_medium.variation_opentype = {wght: 600}
+	# Jemne ztmaveni pod pristrojem: jeden plynuly kruhovy prechod (driv vrstvene kruhy = pruhy)
+	var g := Gradient.new()
+	g.set_color(0, Color(0.0, 0.01, 0.03, 0.62))
+	g.set_color(1, Color(0.0, 0.01, 0.03, 0.0))
+	g.add_point(0.55, Color(0.0, 0.01, 0.03, 0.42))
+	_shade = GradientTexture2D.new()
+	_shade.gradient = g
+	_shade.fill = GradientTexture2D.FILL_RADIAL
+	_shade.fill_from = Vector2(0.5, 0.5)
+	_shade.fill_to = Vector2(1.0, 0.5)
+	_shade.width = 512
+	_shade.height = 512
 
 
 func _process(delta: float) -> void:
@@ -49,6 +64,7 @@ func _process(delta: float) -> void:
 			_gear_flash = 1.0
 		var on: bool = car.nitro_active
 		_n2o_glow = lerpf(_n2o_glow, 1.0 if on else 0.0, 1.0 - exp(-10.0 * delta))
+		_nitro_shown = lerpf(_nitro_shown, car.nitro, 1.0 - exp(-12.0 * delta))
 	_gear_flash = maxf(0.0, _gear_flash - delta * 2.5)
 	queue_redraw()
 
@@ -99,9 +115,24 @@ func _slanted(center: Vector2, sz: Vector2, slant: float, col: Color, filled := 
 		center + Vector2(h.x - slant * 0.5, h.y), center + Vector2(-h.x - slant * 0.5, h.y)])
 	if filled:
 		draw_colored_polygon(pts, col)
+		pts.append(pts[0])
+		draw_polyline(pts, col, 1.2, true)  # vyhlazeny okraj
 	else:
 		pts.append(pts[0])
 		draw_polyline(pts, col, width, true)
+
+
+## Sikmy pruh zleva doprava s barevnym prechodem (pro nitro).
+func _slanted_bar(left_mid: Vector2, length: float, h: float, slant: float, c0: Color, c1: Color) -> void:
+	if length <= 0.5:
+		return
+	var pts := PackedVector2Array([
+		left_mid + Vector2(slant * 0.5, -h * 0.5), left_mid + Vector2(length + slant * 0.5, -h * 0.5),
+		left_mid + Vector2(length - slant * 0.5, h * 0.5), left_mid + Vector2(-slant * 0.5, h * 0.5)])
+	draw_polygon(pts, PackedColorArray([c0, c1, c1, c0]))
+	var outline := PackedVector2Array(pts)
+	outline.append(pts[0])
+	draw_polyline_colors(outline, PackedColorArray([c0, c1, c1, c0, c0]), 1.2, true)
 
 
 func _draw() -> void:
@@ -123,8 +154,8 @@ func _draw() -> void:
 	var r := 178.0
 
 	# --- Jemne ztmaveni pozadi (jen kvuli citelnosti, zadny kotouc) ---
-	for i in 9:
-		draw_circle(c, r + 34.0 - i * 20.0, Color(0.0, 0.01, 0.03, 0.085))
+	var sh := r + 60.0
+	draw_texture_rect(_shade, Rect2(c - Vector2(sh, sh), Vector2(sh, sh) * 2.0), false)
 
 	var col := C_ACCENT.lerp(C_HOT, smoothstep(0.62, 0.97, frac / red_frac))
 	if near_red:
@@ -132,17 +163,25 @@ func _draw() -> void:
 
 	# --- Svitici "ocas" za rucickou ---
 	var a_now := _ang(frac)
-	var slices := 26
-	var step := deg_to_rad(1.9)
-	for i in slices:
-		var a1 := a_now - i * step
-		var a0 := maxf(a1 - step, _ang(0.0))
-		if a1 <= _ang(0.0):
-			break
-		var k := 1.0 - float(i) / slices
-		var d0 := _dir(a0)
-		var d1 := _dir(a1)
-		draw_colored_polygon(PackedVector2Array([c + d0 * (r - 34.0), c + d1 * (r - 34.0), c + d1 * (r - 3.0), c + d0 * (r - 3.0)]), Color(col, 0.42 * k * k))
+	# jedna vyhlazena cara s plynule mizejici barvou (driv dilci plosky se zubatymi okraji)
+	var tail_len := minf(deg_to_rad(50.0), a_now - _ang(0.0))
+	if tail_len > 0.01:
+		var outer := PackedVector2Array()
+		var inner := PackedVector2Array()
+		var oc := PackedColorArray()
+		var steps := 32
+		for i in steps + 1:
+			var f := float(i) / steps
+			var d := _dir(a_now - tail_len + tail_len * f)
+			outer.append(c + d * (r - 3.0))
+			inner.append(c + d * (r - 34.0))
+			oc.append(Color(col, 0.45 * f * f))
+		var poly := PackedVector2Array(outer)
+		var cols := PackedColorArray(oc)
+		for i in range(steps, -1, -1):
+			poly.append(inner[i])
+			cols.append(oc[i])
+		draw_polygon(poly, cols)
 
 	# --- Tenky oblouk: zaklad, cervene pole, rozsvicena cast ---
 	draw_arc(c, r, _ang(0.0), _ang(red_frac), 96, Color(1, 1, 1, 0.3), 2.0, true)
@@ -174,7 +213,10 @@ func _draw() -> void:
 	var n0 := c + nd * (r - 52.0)
 	var n1 := c + nd * (r + 10.0)
 	draw_line(n0, n1, Color(col, 0.3), 10.0, true)
-	draw_colored_polygon(PackedVector2Array([n0 + perp * 1.2, n1 + perp * 3.2, n1 - perp * 3.2, n0 - perp * 1.2]), Color.WHITE)
+	var needle := PackedVector2Array([n0 + perp * 1.2, n1 + perp * 3.2, n1 - perp * 3.2, n0 - perp * 1.2])
+	draw_colored_polygon(needle, Color.WHITE)
+	needle.append(needle[0])
+	draw_polyline(needle, Color.WHITE, 1.0, true)
 
 	# --- Stred: velka rychlost ---
 	_digits(c + Vector2(0, -8), "%d" % int(round(_speed)), 104, Color.WHITE, font_bold)
@@ -195,20 +237,26 @@ func _draw() -> void:
 		_centered(gpos + Vector2(0, 1), gear_text, 46, Color.WHITE, font_bold)
 	_centered(gpos + Vector2(-66, 0), "GEAR", 13, Color(C_TEXT, 0.55), font_medium, false)
 
-	# --- Nitro: rada sikmych dilku pod pristrojem (dobiji se i driftem) ---
-	var segs := 14
-	var seg_w := 19.0
-	var gap_w := 5.0
-	var total_w := segs * seg_w + (segs - 1) * gap_w
-	var npos := c + Vector2(-total_w * 0.5 + 20.0, r + 22.0)
-	var ncol := C_N2O.lerp(Color(0.85, 0.97, 1.0), _n2o_glow)
-	for i in segs:
-		var center := npos + Vector2(i * (seg_w + gap_w) + seg_w * 0.5, 0)
-		var filled := (float(i) + 0.5) / segs <= nitro
-		if filled:
-			if nitro_on:
-				_slanted(center, Vector2(seg_w + 6, 20), 7.0, Color(ncol, 0.25))
-			_slanted(center, Vector2(seg_w, 13), 7.0, ncol)
-		else:
-			_slanted(center, Vector2(seg_w, 13), 7.0, Color(1, 1, 1, 0.16))
-	_centered(npos + Vector2(-34, 0), "N2O", 18, Color.WHITE if nitro_on else Color(0.6, 0.82, 1.0), font_bold)
+	# --- Nitro: plynuly sikmy pruh pod pristrojem (jako NFSU2; dobiji se i driftem) ---
+	var bar_w := 300.0
+	var bar_h := 16.0
+	var slant := 9.0
+	var bar_l := c + Vector2(-bar_w * 0.5 + 22.0, r + 22.0)
+	var fill := clampf(_nitro_shown, 0.0, 1.0)
+	# podklad
+	_slanted(bar_l + Vector2(bar_w * 0.5, 0), Vector2(bar_w + 6.0, bar_h + 6.0), slant, Color(0.0, 0.02, 0.05, 0.7))
+	_slanted(bar_l + Vector2(bar_w * 0.5, 0), Vector2(bar_w + 6.0, bar_h + 6.0), slant, Color(0.55, 0.8, 1.0, 0.35), false, 1.4)
+	var c0 := Color(0.1, 0.35, 1.0)
+	var c1 := Color(0.3, 0.85, 1.0)
+	if nitro_on:
+		c0 = c0.lerp(Color(0.6, 0.85, 1.0), _n2o_glow)
+		c1 = c1.lerp(Color.WHITE, _n2o_glow)
+		_slanted_bar(bar_l - Vector2(3, 0), bar_w * fill + 6.0, bar_h + 10.0, slant, Color(c0, 0.25), Color(c1, 0.35))
+	_slanted_bar(bar_l, bar_w * fill, bar_h, slant, c0, c1)
+	# svetly lesk na horni hrane
+	_slanted_bar(bar_l + Vector2(1.5, -bar_h * 0.3), maxf(bar_w * fill - 3.0, 0.0), 2.0, slant * 0.12, Color(1, 1, 1, 0.25), Color(1, 1, 1, 0.55))
+	# jemne dilky po ctvrtinach
+	for q in [0.25, 0.5, 0.75]:
+		var x: float = bar_l.x + bar_w * q
+		draw_line(Vector2(x + slant * 0.5, bar_l.y - bar_h * 0.5), Vector2(x - slant * 0.5, bar_l.y + bar_h * 0.5), Color(0, 0.02, 0.06, 0.55), 1.5, true)
+	_centered(bar_l + Vector2(-38, 0), "N2O", 18, Color.WHITE if nitro_on else Color(0.6, 0.82, 1.0), font_bold)

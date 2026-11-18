@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Vygeneruje plan obriho mesta do data/mesto.json (hra ho jen nacte).
 
-Mesto je poskladane podle skutecnych mest:
+Mapa = dve mesta vedle sebe (dohromady ovalna metropole), reka pres obe, pas hor na severu.
+Kazde mesto je poskladane podle skutecnych mest:
   - reka s nabrezimi a mosty (Praha, Pariz),
   - stare mesto s krivolakymi ulickami uvnitr okruzni tridy (Viden - Ringstrasse),
   - paprskove bulvary a druhy okruh (Moskva, Pariz),
@@ -24,6 +25,8 @@ import sys
 from collections import defaultdict
 
 import numpy as np
+from scipy.interpolate import CubicSpline
+from scipy.ndimage import gaussian_filter1d
 from scipy.spatial import Delaunay, cKDTree
 
 SEED = 2427
@@ -35,10 +38,9 @@ R0 = 3900.0                 # zakladni polomer mesta (m)
 RIVER_HALF = 78.0           # vzdalenost osy nabrezi od osy reky
 W = {"magistrala": 13.5, "dalnice": 13.5, "bulvar": 11.0, "obvod": 9.5, "nabrezi": 9.5, "horska": 8.0, "trida": 9.5, "ulice": 8.0, "ulicka": 6.5}
 PRIORITY = {"magistrala": 6, "dalnice": 5, "bulvar": 4, "obvod": 4, "nabrezi": 4, "horska": 4, "trida": 2, "ulice": 1, "ulicka": 1}
-NO_ATTACH = ("dalnice", "magistrala", "horska")     # na tyto tahy se mistni ulice nenapojuji
-HILL_CENTER = math.radians(-115.0)     # smer, kde za mestem lezi kopce
-HILL_HALF = math.radians(38.0)
-HILL_RREF = 4400.0
+NO_ATTACH = ("dalnice", "magistrala")     # na tyto tahy se mistni ulice nenapojuji
+CORNER_EXTRA = SIDEWALK + 0.6          # krizovatka se zkrati tak, aby se neprekryvaly ani chodniky
+TRIM_MAX = 48.0
 BRIDGE_CLEAR = 7.8                     # vyska mostovky nad spodni silnici (m)
 WATER_LEVEL = 0.0
 MIN_ANGLE = math.radians(48.0)
@@ -46,36 +48,149 @@ WARNED = set()
 
 
 # ---------------------------------------------------------------------------
-#  Tvar mesta
+#  Tvar mapy: mesta (elipsy se zvlnenym okrajem), reka, pas hor
 # ---------------------------------------------------------------------------
-def r_perimeter(th):
-    return R0 * (1.0 + 0.07 * np.sin(2 * th + 1.0) + 0.045 * np.sin(3 * th + 2.3))
+class CityDef:
+    """Jedno mesto: stred, polomer, protazeni (sx, sz), natoceni. Uvnitr 'polarni' souradnice
+    (r, th) v prostoru mesta; r_perimeter(th) = okraj mesta."""
+
+    def __init__(self, name, cx, cz, R0, sx=1.0, sz=1.0, rot_deg=0.0, ph=(1.0, 2.3)):
+        self.name = name
+        self.c = np.array([cx, cz], dtype=float)
+        self.R0 = R0
+        self.sx = sx
+        self.sz = sz
+        self.rot = math.radians(rot_deg)
+        self.ph = ph
+
+    def r_perimeter(self, th):
+        return self.R0 * (1.0 + 0.07 * np.sin(2 * th + self.ph[0]) + 0.045 * np.sin(3 * th + self.ph[1]))
+
+    def to_local(self, p):
+        p = np.asarray(p, dtype=float) - self.c
+        cr, sr = math.cos(-self.rot), math.sin(-self.rot)
+        x = p[..., 0] * cr - p[..., 1] * sr
+        z = p[..., 0] * sr + p[..., 1] * cr
+        return np.stack([x / self.sx, z / self.sz], axis=-1)
+
+    def to_world(self, q):
+        q = np.asarray(q, dtype=float)
+        x = q[..., 0] * self.sx
+        z = q[..., 1] * self.sz
+        cr, sr = math.cos(self.rot), math.sin(self.rot)
+        return np.stack([x * cr - z * sr, x * sr + z * cr], axis=-1) + self.c
+
+    def rnorm(self, p):
+        """Vzdalenost od stredu jako podil polomeru okraje (1 = okraj) a uhel."""
+        q = self.to_local(p)
+        th = np.arctan2(q[..., 1], q[..., 0])
+        return np.hypot(q[..., 0], q[..., 1]) / self.r_perimeter(th), th
+
+    def polar(self, r, th):
+        return self.to_world(np.stack([r * np.cos(th), r * np.sin(th)], axis=-1))
+
+    def ring(self, frac, wob=(), follow=True, step_deg=0.5):
+        """Okruh ve vzdalenosti frac * okraj (follow=True) nebo frac * R0 se zvlnenim wob [(amp, k, faze)]."""
+        th = np.radians(np.arange(0.0, 360.0, step_deg))
+        base = self.r_perimeter(th) if follow else self.R0
+        r = frac * base * (1.0 + sum(a * np.sin(k * th + f) for a, k, f in wob))
+        return self.polar(r, th)
+
+    def radial(self, angle_deg, drift_deg, wobble, phase, f0, f1=1.04):
+        a = math.radians(angle_deg)
+        u = np.linspace(0.0, 1.0, 260)
+        th = a + math.radians(drift_deg) * u + wobble * np.sin(2 * np.pi * u * 1.4 + phase) * u * (1.0 - 0.3 * u)
+        r0 = f0 * self.r_perimeter(a)
+        r1 = f1 * self.r_perimeter(th[-1])
+        return self.polar(r0 + (r1 - r0) * u, th)
 
 
-def r_highway(th):
-    return 0.62 * r_perimeter(th) * (1.0 + 0.035 * np.sin(4 * th + 0.7))
+# Mesto A (puvodni) a mesto B (vychodne, protazene - dohromady oval)
+CITY_A = CityDef("A", 0.0, 0.0, 3900.0)
+CITY_B = CityDef("B", 9500.0, 900.0, 3300.0, sx=1.22, sz=0.88, rot_deg=8.0, ph=(2.1, 0.4))
+CITIES = [CITY_A, CITY_B]
+# Parametry ctvrti: podil polomeru pro stare mesto a dalnici, sektor mrizky (stupne), osa mrizky
+DISTRICT_FRAC = {"A": (0.16, 0.62), "B": (0.2, 0.6)}
+GRID = {"A": ((-50.0, -19.0), -30.5, 1500.0, (178.0, 98.0)), "B": ((-100.0, -15.0), -60.0, 1700.0, (150.0, 92.0))}
+GAP_HALF = 2300.0                     # polovicni sirka predmesti mezi mesty
+R0 = CITY_A.R0
+# Volne plochy (kruhy bez mistnich ulic) - z nich vzniknou velke treninkove plochy
+LOT_ZONES = [(820.0, 330.0, 250.0), (-1950.0, -1250.0, 270.0), (5300.0, -500.0, 300.0), (8700.0, 1650.0, 280.0), (11300.0, -300.0, 260.0)]
 
-
-def r_ring2(th):
-    return 1400.0 * (1.0 + 0.05 * np.sin(3 * th + 0.4))
-
-
-def r_ring3(th):
-    return 0.82 * r_perimeter(th) * (1.0 + 0.03 * np.sin(5 * th + 1.3))
-
-
-def r_inner(th):
-    return 630.0 * (1.0 + 0.09 * np.sin(2 * th + 0.5) + 0.05 * np.sin(5 * th + 1.0))
+_RIVER_PTS = np.array([(-9000, 2300), (-6500, 1500), (-3000, 700), (0, 250), (3000, 450), (6300, 1300), (9500, 900),
+                       (12600, 1250), (15500, 2300), (19000, 3200)], dtype=float)
+_RIVER = CubicSpline(_RIVER_PTS[:, 0], _RIVER_PTS[:, 1], bc_type="natural")
 
 
 def river_z(x):
-    return 250.0 + 620.0 * (x / 3600.0) ** 2 + 55.0 * np.sin(x / 420.0 + 0.8)
+    return _RIVER(np.asarray(x, dtype=float))
 
 
-def ring(fn, step_deg=0.5):
-    th = np.radians(np.arange(0.0, 360.0, step_deg))
-    r = fn(th)
-    return np.stack([r * np.cos(th), r * np.sin(th)], axis=1)
+def gap_dist(p):
+    """Vzdalenost od spojnice stredu mest (predmesti mezi mesty)."""
+    p = np.asarray(p, dtype=float)
+    a, b = CITY_A.c, CITY_B.c
+    ab = b - a
+    t = np.clip(((p - a) @ ab) / (ab @ ab), 0.25, 0.75)
+    proj = a + t[..., None] * ab
+    return np.linalg.norm(p - proj, axis=-1)
+
+
+def city_of(p):
+    """Mesto, kteremu bod patri (nejmensi pomerny polomer), a jeho (r, th)."""
+    best = None
+    for c in CITIES:
+        rn, th = c.rnorm(p)
+        if best is None or rn < best[1]:
+            best = (c, float(rn), float(th))
+    return best
+
+
+def outside_dist(x, z):
+    """Pribl. vzdalenost bodu od okraje metropole (zaporna uvnitr)."""
+    p = np.stack([np.asarray(x, dtype=float), np.asarray(z, dtype=float)], axis=-1)
+    d = None
+    for c in CITIES:
+        rn, _ = c.rnorm(p)
+        dc = (rn - 1.0) * c.R0 * 0.5 * (c.sx + c.sz)
+        d = dc if d is None else np.minimum(d, dc)
+    return np.minimum(d, gap_dist(p) - GAP_HALF)
+
+
+def in_metro(p):
+    return float(outside_dist(p[0], p[1])) < 0.0
+
+
+def _north_edge_table():
+    xs = np.arange(-12000.0, 22000.0, 50.0)
+    zs = np.arange(-9000.0, 6000.0, 20.0)
+    edge = np.full(len(xs), np.nan)
+    for i, x in enumerate(xs):
+        d = outside_dist(np.full(len(zs), x), zs)
+        inside = np.nonzero(d < 0.0)[0]
+        if len(inside):
+            edge[i] = zs[inside[0]]
+    ok = ~np.isnan(edge)
+    edge = np.interp(xs, xs[ok], edge[ok])
+    return xs, gaussian_filter1d(edge, 22.0)
+
+
+_NE_X, _NE_Z = _north_edge_table()
+HILL_U = (-6500.0, 15500.0)           # rozsah pasu hor podel severniho okraje
+
+
+def north_edge(x):
+    return np.interp(np.asarray(x, dtype=float), _NE_X, _NE_Z)
+
+
+def hill_to_world(pts):
+    """Body v souradnicich hor (u = x, v = metry na sever od okraje metropole) -> svet."""
+    pts = np.asarray(pts, dtype=float)
+    return np.stack([pts[:, 0], north_edge(pts[:, 0]) - pts[:, 1]], axis=1)
+
+
+def r_perimeter(th):
+    return CITY_A.r_perimeter(th)
 
 
 def polyline_length(pl):
@@ -96,24 +211,6 @@ def offset_curve(pl, dist):
     d = np.gradient(pl, axis=0)
     d /= np.linalg.norm(d, axis=1, keepdims=True)
     return pl + np.stack([-d[:, 1], d[:, 0]], axis=1) * dist
-
-
-def radial(angle_deg, drift_deg, wobble, phase, start=None):
-    a = math.radians(angle_deg)
-    u = np.linspace(0.0, 1.0, 220)
-    th = a + math.radians(drift_deg) * u + wobble * np.sin(2 * np.pi * u * 1.4 + phase) * u * (1.0 - 0.3 * u)
-    r0 = (r_inner(a) * 0.93) if start is None else start(a) * 0.96
-    r1 = r_perimeter(th[-1]) * 1.04
-    r = r0 + (r1 - r0) * u
-    return np.stack([r * np.cos(th), r * np.sin(th)], axis=1)
-
-
-def hill_to_world(pts):
-    """Body v souradnicich kopcu (a = metry podel okraje mesta, v = metry ven od okraje) -> svet."""
-    pts = np.asarray(pts, dtype=float)
-    th = HILL_CENTER + pts[:, 0] / HILL_RREF
-    r = r_perimeter(th) + pts[:, 1]
-    return np.stack([r * np.cos(th), r * np.sin(th)], axis=1)
 
 
 def left_of(h):
@@ -156,75 +253,127 @@ def tangent_path(elements, step=12.0):
     return np.array(out)
 
 
-MAG = {"a": 3661.2, "b": 1266.5, "rot": 9.295, "cx": 212.7, "cz": -1236.8, "w1": 214.5, "p1": 6.0252, "w2": 64.3, "p2": 3.7723}
+# Magistrala: nepravidelna smycka pres obe mesta (dlouhe rovinky, zatacky na obe strany, dva "zaliby" dovnitr)
+def _mag_arc(c, th0, th1, ph, step_deg=12.0):
+    """Ridici body magistraly v meste c: mezi dalnici (0.62) a obvodem (1.0), zvlnene doleva i doprava."""
+    n = int(abs(th1 - th0) / step_deg) + 1
+    th = np.radians(np.linspace(th0, th1, n))
+    frac = 0.8 + 0.07 * np.sin(3.0 * th + ph) + 0.035 * np.sin(5.0 * th + 2.0 * ph)
+    return c.polar(frac * c.r_perimeter(th), th)
+
+
+def magistrala_points():
+    # A: z vychodu-severu pres sever, zapad a jih na vychod-jih; B: ze zapadu-jihu pres jih, vychod
+    # a sever na zapad-sever. Mezi mesty dva propojovaci useky (sever a jih) = dlouhe rovinky.
+    a = _mag_arc(CITY_A, -40.0, -320.0, 0.6)
+    b = _mag_arc(CITY_B, 140.0, -140.0, 2.2)
+    return np.concatenate([a, b])
+
+
+MAG_PTS = [tuple(p) for p in magistrala_points()]
 
 
 def magistrala_curve():
-    """Mestska magistrala: velka "osmicka" pres cele mesto (zataci na obe strany, sama sebe krizi mostem)."""
-    m = MAG
-    t = np.radians(np.arange(0.0, 360.0, 0.2))
-    x = m["a"] * np.cos(t) + m["w1"] * np.sin(3 * t + m["p1"])
-    z = m["b"] * np.sin(2 * t) + m["w2"] * np.sin(5 * t + m["p2"])
-    rot = math.radians(m["rot"])
-    xr = x * math.cos(rot) - z * math.sin(rot) + m["cx"]
-    zr = x * math.sin(rot) + z * math.cos(rot) + m["cz"]
-    return np.stack([xr, zr], axis=1)
+    pts = np.array(MAG_PTS, dtype=float)
+    closed = np.concatenate([pts[-1:], pts, pts[:2]])
+    curve = catmull_rom(closed, 20.0)
+    # orez na jednu smycku (catmull_rom prochazi body 1..n+1)
+    n0 = np.argmin(np.linalg.norm(curve - pts[0], axis=1))
+    rest = curve[n0 + 5:]
+    n1 = n0 + 5 + np.argmin(np.linalg.norm(rest - pts[0], axis=1))
+    return curve[n0:n1]
+
+
+RIDGE_V = 1900.0
+
+
+def ridge_v(u):
+    return RIDGE_V + 230.0 * math.sin(u / 1650.0) + 110.0 * math.sin(u / 590.0 + 1.0)
+
+
+def serpentine(u0, v0, v1, half_w, hairpins, r_hair=32.0):
+    """Serpentiny v souradnicich hor: od (u0, v0) nahoru k v1, `hairpins` vlasenek."""
+    dv = (v1 - v0 - 2.0 * r_hair) / (hairpins + 1)
+    el = [("bod", (u0 - half_w, v0 - 380.0)), ("kruh", (u0 - half_w + 55.0, v0 + 40.0), 55.0, -1)]
+    for k in range(hairpins):
+        side = 1.0 if k % 2 == 0 else -1.0
+        el.append(("kruh", (u0 + side * half_w, v0 + dv * (k + 1)), r_hair, side))
+    last = 1.0 if hairpins % 2 == 0 else -1.0
+    el.append(("kruh", (u0 + last * half_w * 0.2, v1 - 80.0), 80.0, last))
+    el.append(("bod", (u0 + last * half_w * 0.2 + 80.0 * last, ridge_v(u0) + 420.0)))
+    return tangent_path(el)
+
+
+def winding(points, step=14.0):
+    return catmull_rom(np.array(points, dtype=float), step)
 
 
 def hill_roads():
-    """Horske silnice v kopcich za mestem: serpentiny, hrebenovka a dva dlouhe sjezdy."""
+    """Horske silnice v pasu hor nad obema mesty: hrebenovka, pet vyjezdu (dva se serpentinami), dve vrcholove smycky."""
     roads = []
-    # Serpentiny: sest vlasenek nad sebou, nahore se napoji na hrebenovku
-    u, v0, dv, rh = 215.0, 190.0, 195.0, 32.0
-    el = [("bod", (-u, -55.0)), ("kruh", (-u + 55.0, 45.0), 55.0, -1)]
-    for k in range(6):
-        side = 1.0 if k % 2 == 0 else -1.0
-        el.append(("kruh", (side * u, v0 + k * dv), rh, side))
-    top = v0 + 5 * dv + rh
-    el.append(("kruh", (-u + 300.0, top + 80.0), 80.0, 1))
-    el.append(("bod", (-u + 380.0, 1700.0)))
-    roads.append(("serpentiny", tangent_path(el)))
-    # Hrebenovka: od zapadniho okraje mesta sikmo nahoru, po hrebeni nad serpentinami a na vychode zase dolu
-    pts = [(-2650, -55), (-2650, 70), (-2560, 250), (-2330, 400), (-2210, 640), (-1960, 790), (-1850, 1040),
-           (-1620, 1220), (-1480, 1420), (-1000, 1540), (-500, 1440), (0, 1560), (500, 1450), (1000, 1560),
-           (1480, 1430), (1640, 1210), (1870, 1050), (1950, 800), (2200, 650), (2340, 410), (2570, 250),
-           (2650, 70), (2650, -55)]
-    roads.append(("hrebenovka", catmull_rom(np.array(pts, dtype=float), 14.0)))
+    us = np.arange(-5200.0, 14300.0, 650.0)
+    ridge = [(u, ridge_v(u)) for u in us]
+    roads.append(("hrebenovka", winding(ridge)))
+    roads.append(("serpentiny_a", serpentine(-600.0, 120.0, ridge_v(-600.0) - 120.0, 220.0, 6)))
+    roads.append(("serpentiny_b", serpentine(6400.0, 120.0, ridge_v(6400.0) - 120.0, 240.0, 5)))
+
+    def climb(u, wig):
+        top = ridge_v(u)
+        pts = [(u, -420.0)]
+        for k, f in enumerate((0.18, 0.4, 0.62, 0.82)):
+            pts.append((u + wig * (1 if k % 2 == 0 else -1), top * f))
+        pts += [(u, top - 120.0), (u, top + 380.0)]
+        return winding(pts)
+    roads.append(("vyjezd_a", climb(2400.0, 260.0)))
+    roads.append(("vyjezd_b", climb(9750.0, 280.0)))
+    roads.append(("vyjezd_c", climb(13350.0, 240.0)))
+    roads.append(("vrcholy_a", winding([(-400, RIDGE_V - 150), (-200, 2500), (700, 3050), (2000, 3150), (3300, 2850), (4100, 2350), (4300, RIDGE_V - 250)])))
+    roads.append(("vrcholy_b", winding([(7400, RIDGE_V - 150), (7700, 2550), (8800, 3150), (10100, 3000), (10900, 2450), (11100, RIDGE_V - 250)])))
     return [(name, resample(hill_to_world(pts), 14.0)) for name, pts in roads]
 
 
 def build_majors():
     """Hlavni tahy: (nazev, trida, uzavreny, lomena cara)."""
     majors = []
-    majors.append(("obvod", "obvod", True, resample(ring(r_perimeter), 20.0)))
-    majors.append(("dalnice", "dalnice", True, resample(ring(r_highway), 20.0)))
-    majors.append(("ring", "bulvar", True, resample(ring(r_inner), 20.0)))
-    majors.append(("okruh2", "bulvar", True, resample(ring(r_ring2), 20.0)))
-    majors.append(("okruh3", "bulvar", True, resample(ring(r_ring3), 20.0)))
-    # Paprsky (uhel 0 = vychod, 90 = jih); mezi vychodem a jihovychodem tece reka, tam zadny neni
+    A, B = CITY_A, CITY_B
+    # --- Mesto A (jako driv) ---
+    majors.append(("A_obvod", "obvod", True, resample(A.ring(1.0), 20.0)))
+    majors.append(("A_dalnice", "dalnice", True, resample(A.ring(0.62, [(0.035, 4, 0.7)]), 20.0)))
+    majors.append(("A_ring", "bulvar", True, resample(A.ring(630.0 / 3900.0, [(0.09, 2, 0.5), (0.05, 5, 1.0)], follow=False), 20.0)))
+    majors.append(("A_okruh2", "bulvar", True, resample(A.ring(1400.0 / 3900.0, [(0.05, 3, 0.4)], follow=False), 20.0)))
     for k, (ang, drift, wob, ph) in enumerate([(-160, 6, 0.06, 0.3), (-124, -7, 0.07, 1.7), (-90, 5, 0.05, 2.9),
                                               (-52, -4, 0.03, 0.9), (-17, 5, 0.03, 4.1), (54, 7, 0.07, 2.2),
                                               (92, -6, 0.06, 5.0), (131, 6, 0.07, 3.6)]):
-        majors.append((f"paprsek{k}", "bulvar", False, resample(radial(ang, drift, wob, ph), 20.0)))
-    # Vedlejsi paprsky az od druheho okruhu (ve velkem meste by jinak mezi hlavnimi bylo prilis daleko)
+        majors.append((f"A_paprsek{k}", "bulvar", False, resample(A.radial(ang, drift, wob, ph, 0.15), 20.0)))
     for k, (ang, drift, wob, ph) in enumerate([(-142, -4, 0.04, 2.0), (-107, 5, 0.04, 0.4), (-71, -5, 0.04, 3.3),
                                               (-34, 3, 0.02, 1.2), (73, -5, 0.05, 4.4), (111, 5, 0.05, 1.0)]):
-        majors.append((f"vedlejsi{k}", "bulvar", False, resample(radial(ang, drift, wob, ph, r_ring2), 20.0)))
-    # Reka a jeji dve nabrezi
-    x = np.arange(-4900.0, 4900.0, 10.0)
+        majors.append((f"A_vedlejsi{k}", "bulvar", False, resample(A.radial(ang, drift, wob, ph, 0.345), 20.0)))
+    # --- Mesto B (protazene, vetsi mrizka v centru) ---
+    majors.append(("B_obvod", "obvod", True, resample(B.ring(1.0), 20.0)))
+    majors.append(("B_dalnice", "dalnice", True, resample(B.ring(0.6, [(0.04, 3, 2.0)]), 20.0)))
+    majors.append(("B_ring", "bulvar", True, resample(B.ring(0.2, [(0.08, 3, 1.1)]), 20.0)))
+    for k, (ang, drift, wob, ph) in enumerate([(-150, 5, 0.05, 1.1), (-110, -6, 0.06, 2.4), (-72, 4, 0.04, 0.2), (-36, 4, 0.04, 2.0),
+                                              (55, 6, 0.06, 1.8), (95, -5, 0.05, 4.2), (130, 4, 0.05, 0.7)]):
+        majors.append((f"B_paprsek{k}", "bulvar", False, resample(B.radial(ang, drift, wob, ph, 0.18), 20.0)))
+    for k, (ang, drift, wob, ph) in enumerate([(-130, 3, 0.03, 0.5), (-54, -3, 0.03, 1.9), (75, -4, 0.04, 2.6), (112, 4, 0.04, 1.4)]):
+        majors.append((f"B_vedlejsi{k}", "bulvar", False, resample(B.radial(ang, drift, wob, ph, 0.43), 20.0)))
+    # --- Spojka mest pres predmesti ---
+    a0 = A.polar(A.r_perimeter(math.radians(-4.0)) * 0.97, math.radians(-4.0))
+    b0 = B.polar(B.r_perimeter(math.radians(178.0)) * 0.97, math.radians(178.0))
+    mid = (a0 + b0) * 0.5 + np.array([0.0, -260.0])
+    majors.append(("spojka", "bulvar", False, resample(catmull_rom(np.array([a0 - (mid - a0) * 0.15, a0, mid, b0, b0 + (b0 - mid) * 0.15]), 20.0), 20.0)))
+    # --- Reka a jeji dve nabrezi ---
+    x = np.arange(-5600.0, 15200.0, 10.0)
     river = np.stack([x, river_z(x)], axis=1)
     majors.append(("nabrezi_s", "nabrezi", False, resample(offset_curve(river, -RIVER_HALF), 20.0)))
     majors.append(("nabrezi_j", "nabrezi", False, resample(offset_curve(river, RIVER_HALF), 20.0)))
-    # Magistrala a horske silnice
+    # --- Magistrala a horske silnice ---
     majors.append(("magistrala", "magistrala", True, resample(magistrala_curve(), 20.0)))
     for name, pl in hill_roads():
         majors.append((name, "horska", False, pl))
     return majors, river
 
 
-# ---------------------------------------------------------------------------
-#  Geometrie
-# ---------------------------------------------------------------------------
 def seg_intersections(a0, a1, b0, b1):
     """Pruseciky vsech usecek A (n x 2) se vsemi useckami B (m x 2). Vraci indexy a parametry."""
     da = (a1 - a0)[:, None, :]
@@ -294,25 +443,30 @@ def bent_segment(a, b, sag):
 # ---------------------------------------------------------------------------
 #  Ctvrti
 # ---------------------------------------------------------------------------
-GRID_SECTOR = (math.radians(-50.0), math.radians(-19.0))
+def _in_grid(city, rn, th):
+    sec = GRID[city.name][0]
+    f_in, f_hw = DISTRICT_FRAC[city.name]
+    return f_in <= rn < f_hw and math.radians(sec[0]) < th < math.radians(sec[1])
 
 
 def district(p):
-    x, z = p
-    r = math.hypot(x, z)
-    th = math.atan2(z, x)
-    south = z > river_z(x)
-    if r < r_inner(th):
-        return "stare"
-    if r < r_highway(th):
-        if GRID_SECTOR[0] < th < GRID_SECTOR[1]:
-            return "mrizka"
-        return "jih" if south else "mesto"
-    if r > r_perimeter(th):
-        return "kopce"
-    if south and x > -400.0:
-        return "prumysl"
-    return "predmesti"
+    x, z = float(p[0]), float(p[1])
+    city, rn, th = city_of(p)
+    south = z > float(river_z(x))
+    f_in, f_hw = DISTRICT_FRAC[city.name]
+    if rn < 1.0:
+        if rn < f_in:
+            return "stare"
+        if rn < f_hw:
+            if _in_grid(city, rn, th):
+                return "mrizka"
+            return "jih" if south else "mesto"
+        if south and (city.name == "B" or x > -400.0):
+            return "prumysl"
+        return "predmesti"
+    if gap_dist(np.array([x, z])) < GAP_HALF:
+        return "predmesti"
+    return "kopce"
 
 
 SPACING = {"stare": 82.0, "mesto": 108.0, "jih": 118.0, "mrizka": 125.0, "predmesti": 150.0, "prumysl": 205.0, "kopce": 400.0}
@@ -381,13 +535,13 @@ def choose_junctions(majors):
     """Vybere par krizeni magistraly s bulvary jako obycejne krizovatky (najezdy), dost daleko od sebe i od mostu."""
     res, total = magistrala_crossings(majors)
     chosen = []
-    cands = [r for r in res if (r[1].startswith("vedlejsi") or r[1].startswith("paprsek") or r[1].startswith("okruh")) and r[2] >= 58.0]
+    cands = [r for r in res if any(k in r[1] for k in ("vedlejsi", "paprsek", "okruh", "spojka", "obvod")) and r[2] >= 55.0]
     cands.sort(key=lambda r: -r[2])
     for c in cands:
         def gap(s1, s2):
             d = abs(s1 - s2) % total
             return min(d, total - d)
-        if any(gap(c[0], o[0]) < 1900.0 for o in chosen):
+        if any(gap(c[0], o[0]) < 1150.0 for o in chosen):
             continue
         if any(gap(c[0], o[0]) < 330.0 for o in res if o is not c):
             continue
@@ -491,34 +645,41 @@ def build_major_graph(city, majors, cuts, grade):
 
 
 def local_points(city, majors, river):
-    """Body mistnich ulic: nahodne s rozestupem podle ctvrti, v mrizkove ctvrti pravidelne."""
+    """Body mistnich ulic: nahodne s rozestupem podle ctvrti, v mrizkovych ctvrtich pravidelne."""
     major_geom = [m[3] if not m[2] else np.concatenate([m[3], m[3][:1]]) for m in majors]
     cand = []
-    # Pravidelna mrizka (Manhattan): dlouhe bloky natocene podle osy vysece
-    axis = (GRID_SECTOR[0] + GRID_SECTOR[1]) * 0.5 + math.radians(4.0)
-    ex = np.array([math.cos(axis), math.sin(axis)])
-    ey = np.array([-ex[1], ex[0]])
-    origin = ex * 1500.0
-    for i in range(-20, 21):
-        for j in range(-26, 27):
-            p = origin + ex * i * 178.0 + ey * j * 98.0 + rng.uniform(-4.0, 4.0, 2)
-            if district(p) == "mrizka":
-                cand.append((p, "mrizka"))
-    grid_pts = np.array([c[0] for c in cand])
-    # Nahodne body (Poissonuv disk s promennou hustotou)
+    # Pravidelne mrizky (Manhattan): dlouhe bloky natocene podle osy vysece
+    for c in CITIES:
+        sec, axis_deg, dist, (bx, by) = GRID[c.name]
+        axis = math.radians(axis_deg)
+        ex = np.array([math.cos(axis), math.sin(axis)])
+        ey = np.array([-ex[1], ex[0]])
+        origin = c.polar(dist, axis)
+        for i in range(-30, 31):
+            for j in range(-40, 41):
+                q = origin + (ex * i * bx + ey * j * by) * np.array([1.0, 1.0]) + rng.uniform(-4.0, 4.0, 2)
+                if district(q) == "mrizka":
+                    cand.append((q, "mrizka"))
+    grid_pts = np.array([c_[0] for c_ in cand])
+    # Nahodne body (Poissonuv disk s promennou hustotou) v cele metropoli
     accepted = []
     cell = 100.0
     buckets = defaultdict(list)
-    tries = rng.uniform(-R0 * 1.15, R0 * 1.15, (440000, 2))
+    lo = np.array([-4700.0, -4700.0])
+    hi = np.array([14200.0, 4900.0])
+    tries = rng.uniform(lo, hi, (1100000, 2))
     scale = rng.uniform(0.92, 1.18, len(tries))
-    for p, sc in zip(tries, scale):
-        r = math.hypot(p[0], p[1])
-        if r > r_perimeter(math.atan2(p[1], p[0])):
+    outside = outside_dist(tries[:, 0], tries[:, 1])
+    rz = river_z(tries[:, 0])
+    for p, sc, od, r_z in zip(tries, scale, outside, rz):
+        if od > -40.0:
+            continue
+        if abs(p[1] - r_z) < RIVER_HALF:
+            continue
+        if any((p[0] - zx) ** 2 + (p[1] - zz) ** 2 < zr * zr for zx, zz, zr in LOT_ZONES):
             continue
         dist = district(p)
-        if dist == "mrizka":
-            continue
-        if abs(p[1] - river_z(p[0])) < RIVER_HALF:
+        if dist == "mrizka" or dist == "kopce":
             continue
         s = SPACING[dist] * sc
         gx, gz = int(p[0] // cell), int(p[1] // cell)
@@ -538,17 +699,17 @@ def local_points(city, majors, river):
             buckets[(gx, gz)].append((p, s))
             accepted.append((p, dist))
     cand += accepted
-    pts = np.array([c[0] for c in cand])
+    pts = np.array([c_[0] for c_ in cand])
     # Body moc blizko hlavnich tahu (a mrizky) pryc
     keep = np.ones(len(pts), dtype=bool)
-    spacing = np.array([SPACING[c[1]] for c in cand])
+    spacing = np.array([SPACING[c_[1]] for c_ in cand])
     for geom in major_geom:
         d = point_polyline_dist(pts, geom)
         keep &= d > np.maximum(0.56 * spacing, 72.0)
     if len(grid_pts):
         tree = cKDTree(grid_pts)
         d, _ = tree.query(pts)
-        is_grid = np.array([c[1] == "mrizka" for c in cand])
+        is_grid = np.array([c_[1] == "mrizka" for c_ in cand])
         keep &= is_grid | (d > 85.0)
     for p, k in zip(pts, keep):
         if k:
@@ -836,8 +997,8 @@ def compute_trims(nodes, streets):
                 continue
             gap_min = min(gap_min, theta)
             if theta < math.pi * 0.95:
-                d = max(d, max(a[1], b[1]) / math.tan(theta * 0.5) + 1.0)
-        trims[n] = min(d, 34.0)
+                d = max(d, (max(a[1], b[1]) + CORNER_EXTRA) / math.tan(theta * 0.5) + 1.0)
+        trims[n] = min(d, TRIM_MAX)
         min_gap[n] = gap_min
     return trims, min_gap, at
 
@@ -1040,13 +1201,16 @@ def make_circuit(name, anchors, node_pos, streets, prefer):
     return {"nazev": name, "ulice": route, "delka": round(length)}
 
 
-def ring_circuit(name, cls, streets):
-    """Okruh po uzavrenem tahu jedne tridy (dalnice)."""
+def ring_circuit(name, cls, streets, city=None):
+    """Okruh po uzavrenem tahu jedne tridy (dalnice, magistrala); city = jen tah v danem meste."""
     at = defaultdict(list)
-    ids = [k for k, s in enumerate(streets) if s["cls"] == cls]
+    ids = [k for k, s in enumerate(streets) if s["cls"] == cls and (city is None or city_of(s["geom"][len(s["geom"]) // 2])[0] is city)]
     for k in ids:
         at[streets[k]["a"]].append(k)
         at[streets[k]["b"]].append(k)
+    if not ids:
+        print(f"  POZOR: okruh {name}: zadna ulice tridy {cls}")
+        return None
     first = ids[0]
     route = [[first, True]]
     node = streets[first]["b"]
@@ -1066,7 +1230,7 @@ def ring_circuit(name, cls, streets):
 # ---------------------------------------------------------------------------
 #  Vysky: prirodni teren, sklony silnic, mosty a podjezdy, vyskova mapa
 # ---------------------------------------------------------------------------
-TERRAIN = {"x0": -6400.0, "z0": -7700.0, "cell": 16.0, "nx": 801, "nz": 851}
+TERRAIN = {"x0": -9200.0, "z0": -11200.0, "cell": 16.0, "nx": 1776, "nz": 1151}
 
 
 def smooth(v, a, b):
@@ -1075,29 +1239,30 @@ def smooth(v, a, b):
 
 
 def terrain(x, z):
-    """Prirodni teren (m n. hladinou reky): udoli reky, mirne zvlnene mesto, kopce za mestem, hory na obzoru."""
+    """Prirodni teren (m n. hladinou reky): udoli reky, mirne zvlnena mesta, pas hor na severu, kopce na obzoru."""
     x = np.asarray(x, dtype=float)
     z = np.asarray(z, dtype=float)
-    r = np.hypot(x, z)
-    th = np.arctan2(z, x)
     dr = np.abs(z - river_z(x))
     base = 4.0 + 34.0 * smooth(dr, 90.0, 2400.0)
     und = (17.0 * np.sin(x / 610.0 + 0.5) * np.cos(z / 740.0 - 0.8) + 10.0 * np.sin((x + z) / 390.0 + 2.0)) * smooth(dr, 120.0, 800.0)
     old = 26.0 * np.exp(-((x + 120.0) ** 2 + (z + 260.0) ** 2) / (2.0 * 340.0 ** 2))
+    old += 22.0 * np.exp(-((x - CITY_B.c[0] + 200.0) ** 2 + (z - CITY_B.c[1] + 150.0) ** 2) / (2.0 * 420.0 ** 2))
     t = np.maximum(base + und + old, 3.0)          # mesto nikde neklesne pod hladinu reky
-    v = r - r_perimeter(th)
+    v = outside_dist(x, z)                          # vzdalenost od okraje metropole (venku kladna)
     noise = np.sin(x / 530.0 + 1.3) * np.sin(z / 470.0 + 0.2) + 0.5 * np.sin((x - z) / 260.0 + 2.1)
-    dth = np.abs((th - HILL_CENTER + np.pi) % (2 * np.pi) - np.pi)
-    ws = 1.0 - smooth(dth, HILL_HALF, HILL_HALF + 0.25)
+    # pas hor: na sever od metropole, v rozsahu HILL_U
+    vn = north_edge(x) - z
+    ws = smooth(vn, -250.0, 250.0) * smooth(x, HILL_U[0], HILL_U[0] + 1500.0) * (1.0 - smooth(x, HILL_U[1] - 1500.0, HILL_U[1]))
     def ramp(q):
         return np.clip((q - 20.0) / 1330.0, 0.0, 1.0)
-    slope = (ramp(v - 70.0) + 2.0 * ramp(v) + ramp(v + 70.0)) / 4.0          # rovnomerny svah se zaoblenymi konci
+    vh = np.maximum(vn, 0.0)
+    slope = (ramp(vh - 70.0) + 2.0 * ramp(vh) + ramp(vh + 70.0)) / 4.0          # rovnomerny svah se zaoblenymi konci
     noise2 = np.sin(x / 430.0 + 0.7) * np.cos(z / 390.0 + 1.1) + 0.5 * np.sin((x + 2.0 * z) / 300.0)
-    bumps = 24.0 * noise2 * smooth(v, 150.0, 600.0)                            # kopecky a sedla podel silnic
-    peaks = 260.0 * smooth(v, 1450.0, 3200.0) * (1.0 + 0.45 * noise)           # vrcholy za hrebenem
-    hills = 200.0 * slope * (1.0 + 0.1 * noise) + bumps + peaks
+    bumps = 24.0 * noise2 * smooth(vh, 150.0, 600.0)                           # kopecky a sedla podel silnic
+    peaks = 300.0 * smooth(vh, 2000.0, 4200.0) * (1.0 + 0.45 * noise)          # vrcholy za hrebenem
+    hills = 210.0 * slope * (1.0 + 0.1 * noise) + bumps + peaks
     rim = 28.0 * smooth(v, 0.0, 700.0) + 150.0 * smooth(v, 900.0, 2500.0) * (1.0 + 0.25 * noise)
-    t = t + np.where(v > 0.0, ws * hills + (1.0 - ws) * rim, 0.0)
+    t = t + np.where(v > 0.0, rim, 0.0) * (1.0 - ws) + ws * hills
     # koryto reky
     bed = WATER_LEVEL - 3.5
     k = smooth(dr, RIVER_HALF - 22.0, RIVER_HALF - 13.0)
@@ -1371,8 +1536,7 @@ def build_heightmap(streets, lots, path):
         d = np.where(is_fixed, d_fixed, avg / (4.0 + c))
     height = nat + d
     # maska povrchu: 255 = mestska dlazba, 0 = trava (kopce a okoli)
-    r = np.hypot(gx, gz)
-    v = r - r_perimeter(np.arctan2(gz, gx))
+    v = outside_dist(gx, gz)
     mask = (255.0 * (1.0 - smooth(v, 20.0, 90.0))).astype(np.uint8)
     with open(path, "wb") as fh:
         fh.write(np.clip(np.round(height / 0.02), -32000, 32000).astype("<i2").tobytes())
@@ -1500,29 +1664,38 @@ def main():
             used_faces.add(f["k"])
             print(f"  plocha {typ}: {f['area'] / 10000.0:.1f} ha u ({f['c'][0]:.0f}, {f['c'][1]:.0f})")
 
-    pick("namesti", (0, -60), 7000, 30000)
-    pick("trenink", (700, 250), 45000, 160000, min_compact=0.55)          # blizko centra (start hry)
-    pick("trenink", (1500, 1900), 70000, 260000, min_compact=0.55)        # prumyslova ctvrt
-    pick("trenink", (-1900, -1300), 60000, 220000, min_compact=0.55)      # severozapadni predmesti
+    # Namesti ve starych mestech a centrech, velke treninkove plochy z volnych zon, mensi plochy
+    for target in [(0, -60), (-420, 330), (380, -420), (9450, 820), (9900, 400), (8900, 1250), (1100, -1300), (10600, 1700)]:
+        pick("namesti", target, 6000, 30000, min_compact=0.45)
+    for zx, zz, zr in LOT_ZONES:
+        pick("trenink", (zx, zz), 90000, 700000, min_compact=0.45)
     for target in [(-1100, -500), (500, -1100), (1700, -700), (-800, 900), (900, 1300), (-2000, 600),
-                   (2100, 400), (-300, -1900), (300, 2000), (-1500, 1700), (1900, -1700), (-400, 400)]:
+                   (2100, 400), (-300, -1900), (300, 2000), (-1500, 1700), (1900, -1700), (-400, 400),
+                   (7400, -300), (8300, -1300), (10900, 1100), (11800, 200), (9900, 2400), (6100, 900), (12600, -700)]:
         pick("plocha", target, 9000, 45000, min_compact=0.45)
 
     # --- Okruhy ---
     node_pos = {n: pts[n] for n in nodes}
     circuits = []
-    hw = [k for k, s in enumerate(streets) if s["cls"] == "dalnice"]
+    bc = CITY_B.c
     c1 = make_circuit("Centrum", [(-560, -280), (120, -640), (640, -130), (560, 200), (330, 60), (0, 0), (-330, 80)],
                       node_pos, streets, {"bulvar": 0.8, "nabrezi": 0.85, "ulicka": 1.0, "ulice": 1.1, "dalnice": 3.0})
     c2 = make_circuit("Nabrezi", [(-1500, 330), (-600, 170), (500, 200), (1500, 360), (1500, 560), (500, 370), (-600, 340), (-1500, 520)],
                       node_pos, streets, {"nabrezi": 0.5, "bulvar": 0.9, "dalnice": 3.0})
-    c3 = ring_circuit("Dalnice", "dalnice", streets)
+    c3 = ring_circuit("Dalnice A", "dalnice", streets, CITY_A)
     c4 = make_circuit("Velky okruh", [(-560, -280), (-1250, -650), (-330, -1360), (760, -1150), (1400, -500), (640, -130), (330, 60), (-330, 80)],
                       node_pos, streets, {"bulvar": 0.75, "nabrezi": 0.9, "dalnice": 3.0, "magistrala": 3.0})
     c5 = ring_circuit("Magistrala", "magistrala", streets)
-    hw_pts = hill_to_world([(-215, 0), (165, 1520), (2650, 0), (1300, 0)])
-    c6 = make_circuit("Kopce", [tuple(p) for p in hw_pts], node_pos, streets, {"horska": 0.4, "obvod": 0.7})
-    for c in (c1, c2, c3, c4, c5, c6):
+    kp = hill_to_world([(-600, -40), (-600, ridge_v(-600) + 60), (900, ridge_v(900)), (2400, ridge_v(2400)), (2400, -40), (900, -60)])
+    c6 = make_circuit("Kopce", [tuple(p) for p in kp], node_pos, streets, {"horska": 0.35, "obvod": 0.7, "dalnice": 3.0, "magistrala": 3.0})
+    c7 = make_circuit("Centrum B", [tuple(bc + d) for d in [(-900, -500), (0, -700), (900, -400), (1100, 400), (300, 700), (-700, 450)]],
+                      node_pos, streets, {"bulvar": 0.8, "ulice": 1.0, "dalnice": 3.0, "magistrala": 3.0})
+    c8 = ring_circuit("Dalnice B", "dalnice", streets, CITY_B)
+    c9 = make_circuit("Dve mesta", [(1500, -900), (5300, -1200), tuple(bc + (-1800, -900)), tuple(bc + (-1500, 900)), (5600, 1900), (1700, 1300)],
+                      node_pos, streets, {"bulvar": 0.7, "obvod": 0.75, "dalnice": 2.0, "magistrala": 3.0})
+    kp2 = hill_to_world([(6400, -40), (6400, ridge_v(6400) + 60), (8100, ridge_v(8100)), (9750, ridge_v(9750)), (9750, -40), (8100, -60)])
+    c10 = make_circuit("Hory B", [tuple(p) for p in kp2], node_pos, streets, {"horska": 0.35, "obvod": 0.7, "dalnice": 3.0, "magistrala": 3.0})
+    for c in (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10):
         if c:
             # start na nejdelsi ulici okruhu (rovinka pro rozjezd)
             k = max(range(len(c["ulice"])), key=lambda i: streets[c["ulice"][i][0]]["len"])
@@ -1540,7 +1713,7 @@ def main():
                    "body": [[round(float(p[0]), 2), round(float(p[1]), 2), round(float(y), 2)] for p, y in zip(s["geom"], s["h"])]} for s in streets],
         "plochy": lots,
         "okruhy": circuits,
-        "reka": [[round(float(p[0]), 1), round(float(p[1]), 1)] for p in river[::8] if math.hypot(p[0], p[1]) < R0 * 1.25],
+        "reka": [[round(float(p[0]), 1), round(float(p[1]), 1)] for p in river[::8]],
         "teren": dict(TERRAIN, soubor="teren.bin", voda=WATER_LEVEL),
     }
     build_heightmap(streets, lots, os.path.join(os.path.dirname(OUT), "teren.bin"))
@@ -1556,13 +1729,16 @@ def main():
 
 def preview(path, data):
     from PIL import Image, ImageDraw
-    size = 2600
-    scale = size / 12800.0
+    tm = TERRAIN
+    wx = (tm["nx"] - 1) * tm["cell"]
+    wz = (tm["nz"] - 1) * tm["cell"]
+    size = 3000
+    scale = size / wx
 
     def tr(p):
-        return (size / 2 + p[0] * scale, size / 2 + (p[1] + 900.0) * scale)
+        return ((p[0] - tm["x0"]) * scale, (p[1] - tm["z0"]) * scale)
 
-    im = Image.new("RGB", (size, size), (18, 20, 28))
+    im = Image.new("RGB", (size, int(wz * scale)), (18, 20, 28))
     dr = ImageDraw.Draw(im)
     colors = {"reka": (30, 70, 130), "trenink": (90, 90, 40), "plocha": (60, 75, 60), "namesti": (110, 80, 50)}
     for lot in data["plochy"]:

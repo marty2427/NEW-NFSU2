@@ -15,3 +15,6 @@ hra_log.txt
 
 # Python
 __pycache__/
+
+# Casy kol a rekordy hrace (zustavaji jen u hrace)
+zaznamy/

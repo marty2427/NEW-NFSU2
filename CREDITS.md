@@ -19,11 +19,6 @@ a materiály a u Silvie se zavírají otevřené dveře a kapota (úprava za bě
   (podle přání vlastníka soukromého projektu se autoři neuvádějí; při jakémkoli zveřejnění je nutné je doplnit).
 - Soubory jsou v původní podobě; ve hře se mění jen barva laku, materiály světel a skel a kola se oddělí od karoserie (za běhu).
 
-## Řízení „Easy Vehicle Physics“ (`addons/gevp/`) – licence MIT
-- Godot Easy Vehicle Physics – David Shoemaker (DAShoe1), části Dechode a Baron Wittman –
-  https://github.com/DAShoe1/Godot-Easy-Vehicle-Physics (převzaty skripty vehicle.gd a wheel.gd beze změn,
-  licence v `addons/gevp/LICENSE`). Ve hře jako varianta řízení na klávese F7.
-
 ## Poly Haven – licence CC0 (volné dílo) – https://polyhaven.com
 ### Textury (`assets/textures/`)
 - asphalt_02, concrete_floor_worn_001, concrete_pavement, concrete_tile_facade,

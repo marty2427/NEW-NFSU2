@@ -356,17 +356,20 @@ func _build_ground() -> void:
 	add_child(body)
 	var cs := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(20000, 2, 20000)
+	var tw := map.terrain_nx * map.terrain_cell
+	var td := map.terrain_nz * map.terrain_cell
+	var tc := Vector3(map.terrain_x0 + tw * 0.5, 0.0, map.terrain_z0 + td * 0.5)
+	shape.size = Vector3(tw + 4000.0, 2, td + 4000.0)
 	cs.shape = shape
-	cs.position = Vector3(0, SAFE_Y - 1.0, 0)
+	cs.position = tc + Vector3(0, SAFE_Y - 1.0, 0)
 	body.add_child(cs)
 	# Hladina vody: jedna velka plocha; je videt jen tam, kde je teren pod ni (koryto reky)
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(15000, 15000)
+	plane.size = Vector2(tw + 2000.0, td + 2000.0)
 	var wm := ShaderMaterial.new()
 	wm.shader = load("res://shaders/water.gdshader")
 	wm.set_shader_parameter("ripple", _ripple_texture())
-	var water := mesh_at(plane, wm, Vector3(0, map.water_level, -800))
+	var water := mesh_at(plane, wm, Vector3(tc.x, map.water_level, tc.z))
 	water.name = "Voda"
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
@@ -442,11 +445,8 @@ func _build_trees() -> void:
 	var x1 := map.terrain_x0 + (map.terrain_nx - 1) * map.terrain_cell
 	var z1 := map.terrain_z0 + (map.terrain_nz - 1) * map.terrain_cell
 	var count := 0
-	for i in 90000:
+	for i in 260000:
 		var p := Vector2(trng.randf_range(map.terrain_x0 + 40.0, x1 - 40.0), trng.randf_range(map.terrain_z0 + 40.0, z1 - 40.0))
-		var r := p.length()
-		if r < map.radius * 0.9 or r > map.radius + 2700.0:
-			continue
 		var ix := int((p.x - map.terrain_x0) / map.terrain_cell)
 		var iz := int((p.y - map.terrain_z0) / map.terrain_cell)
 		if map.terrain_mask[iz * map.terrain_nx + ix] > 40:
@@ -489,7 +489,24 @@ func _build_trees() -> void:
 #  Silnice, chodniky, krizovatky, mostovky
 # ---------------------------------------------------------------------
 
+var _signal_meshes := {}
+
+
 func _build_roads() -> void:
+	var pm := CylinderMesh.new()
+	pm.top_radius = 0.09
+	pm.bottom_radius = 0.12
+	pm.height = 4.4
+	pm.radial_segments = 8
+	pm.rings = 1
+	var hm := BoxMesh.new()
+	hm.size = Vector3(0.42, 1.25, 0.3)
+	var lm := SphereMesh.new()
+	lm.radius = 0.15
+	lm.height = 0.3
+	lm.radial_segments = 10
+	lm.rings = 5
+	_signal_meshes = {"pole": pm, "head": hm, "lamp": lm}
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/road.gdshader")
 	mat.set_shader_parameter("asphalt_albedo", load("res://assets/textures/asphalt_02/asphalt_02_diff.jpg"))
@@ -547,7 +564,10 @@ func _build_roads() -> void:
 		_node_ends["%d:%d" % [map.edge_a[e], e]] = [left[0], right[0], ys[0], left_o[0], right_o[0]]
 		_node_ends["%d:%d" % [map.edge_b[e], e]] = [right[last], left[last], ys[last], right_o[last], left_o[last]]
 
-	# Plochy krizovatek a rohy chodniku
+	# Plochy krizovatek a rohy chodniku.
+	# Okraj vozovky vede od konce jedne ulice pres skutecny roh obrubniku (prusecik okraju vozovek)
+	# ke konci sousedni ulice. Roh chodniku je pas mezi timto okrajem a okrajem bloku (dva ctyruhelniky),
+	# takze nikdy nezasahuje do vozovky - ani na vnejsi strane zatacky, ani ve svahu.
 	for id in map.nodes.size():
 		var arr: Array = map.node_edges[id]
 		if arr.is_empty():
@@ -563,17 +583,18 @@ func _build_roads() -> void:
 			var ends: Array = _node_ends[key]
 			poly.append(v3(ends[0], ends[2]))
 			poly.append(v3(ends[1], ends[2]))
-			# U ostre zatacky (vnejsi strana) se prida spicka, aby asfalt dosahl az k obrubniku
-			if map.corner_angle(id, k) > PI * 1.1:
-				poly.append(v3(map.corner(id, k, 0.0), ny))
+			var p0 := map.corner(id, k, 0.0)
+			if arr.size() >= 2:
+				poly.append(v3(p0, _corner_height(id, k, p0)))
 		var center := v3(map.nodes[id], ny)
 		for i in poly.size():
 			_tri_up(st, center, poly[i], poly[(i + 1) % poly.size()])
-		# Roh chodniku mezi touto a dalsi ulici
+		if arr.size() < 2:
+			continue
 		for k in arr.size():
 			var key_a := "%d:%d" % [id, arr[k].e]
 			var key_b := "%d:%d" % [id, arr[(k + 1) % arr.size()].e]
-			if arr.size() < 2 or not _node_ends.has(key_a) or not _node_ends.has(key_b):
+			if not _node_ends.has(key_a) or not _node_ends.has(key_b):
 				continue
 			var a_right_side := 1 if arr[k].start else -1
 			var b_left_side := -1 if arr[(k + 1) % arr.size()].start else 1
@@ -581,32 +602,103 @@ func _build_roads() -> void:
 				continue
 			var ea: Array = _node_ends[key_a]
 			var eb: Array = _node_ends[key_b]
+			var p0 := map.corner(id, k, 0.0)
+			var c2 := map.corner(id, k, sw)
 			var ya: float = ea[2] + CURB
 			var yb: float = eb[2] + CURB
-			var ym := (ya + yb) * 0.5
-			var c2 := map.corner(id, k, sw)
-			var ring2 := PackedVector2Array([ea[1], ea[4], c2, eb[3], eb[0]])
-			var ring_y := [ya, ya, ym, yb, yb]
-			var road_side := [v3(ea[1], ea[2])]
-			if map.corner_angle(id, k) > PI * 1.1:
-				ring2.append(map.corner(id, k, 0.0))
-				ring_y.append(ym)
-				road_side.append(v3(map.corner(id, k, 0.0), ny))
-			road_side.append(v3(eb[0], eb[2]))
+			var y0 := _corner_height(id, k, p0)
+			var yc := _corner_height(id, k, c2) + CURB
 			var sst := _tool("chodnik", map.nodes[id])
-			var idx := Geometry2D.triangulate_polygon(ring2)
-			if idx.is_empty():
-				for i in range(1, ring2.size() - 1):       # nouzove: vejir z prvniho bodu
-					idx.append_array([0, i, i + 1])
-			for i in range(0, idx.size(), 3):
-				_tri_up(sst, v3(ring2[idx[i]], ring_y[idx[i]]), v3(ring2[idx[i + 1]], ring_y[idx[i + 1]]), v3(ring2[idx[i + 2]], ring_y[idx[i + 2]]))
-			for i in road_side.size() - 1:
-				var pa: Vector3 = road_side[i]
-				var pb: Vector3 = road_side[i + 1]
-				var along := Vector2(pb.x - pa.x, pb.z - pa.z)
-				if along.length() > 0.3:
-					var to_center := Vector3(center.x - pa.x, 0.0, center.z - pa.z).normalized()
+			# ctyruhelnik u ulice A a ctyruhelnik u ulice B
+			for quad in [[v3(ea[1], ya), v3(p0, yc), v3(c2, yc), v3(ea[4], ya)], [v3(p0, yc), v3(eb[0], yb), v3(eb[3], yb), v3(c2, yc)]]:
+				var q0: Vector3 = quad[0]
+				var q1: Vector3 = quad[1]
+				var q2: Vector3 = quad[2]
+				var q3: Vector3 = quad[3]
+				if Vector2(q0.x - q1.x, q0.z - q1.z).length() < 0.05 and Vector2(q3.x - q2.x, q3.z - q2.z).length() < 0.05:
+					continue
+				_tri_up(sst, q0, q1, q2)
+				_tri_up(sst, q0, q2, q3)
+			# hrana obrubniku po okraji vozovky
+			for seg in [[v3(ea[1], ea[2]), v3(p0, y0)], [v3(p0, y0), v3(eb[0], eb[2])]]:
+				var pa: Vector3 = seg[0]
+				var pb: Vector3 = seg[1]
+				if Vector2(pb.x - pa.x, pb.z - pa.z).length() > 0.3:
+					var to_center := Vector3(center.x - (pa.x + pb.x) * 0.5, 0.0, center.z - (pa.z + pb.z) * 0.5).normalized()
 					_vquad(_tool("obrubnik", map.nodes[id]), pa, pb, CURB, to_center)
+		if arr.size() >= 3:
+			_junction_markings(id)
+
+
+## Prechody pro chodce a semafory: krizovatka je tak videt uz z dalky.
+func _junction_markings(id: int) -> void:
+	var arr: Array = map.node_edges[id]
+	var main := 0
+	for ne: Dictionary in arr:
+		var cls := map.edge_class[ne.e]
+		if cls == "dalnice" or cls == "magistrala" or cls == "horska":
+			return
+		if cls != "ulicka" and cls != "ulice":
+			main += 1
+	var was_collect := _collect
+	_collect = false
+	var phase := (id % 2) == 0
+	for k in arr.size():
+		var ne: Dictionary = arr[k]
+		var key := "%d:%d" % [id, ne.e]
+		if not _node_ends.has(key):
+			continue
+		var ends: Array = _node_ends[key]
+		var out: Vector2 = ne.out
+		var l: Vector2 = ends[0]
+		var r: Vector2 = ends[1]
+		var total: float = map.stations[ne.e][map.stations[ne.e].size() - 1]
+		var y_at := func(d: float) -> float:
+			var t := map.trim[id] + d
+			return map.edge_height(ne.e, t if ne.start else total - t) + 0.025
+		# prechod: bile pruhy pres celou sirku vozovky, 1.2 az 4.2 m od okraje krizovatky
+		var across := r - l
+		var width := across.length()
+		var dir := across / maxf(width, 0.01)
+		var zst := _tool("zebra", map.nodes[id])
+		var ya: float = y_at.call(1.2)
+		var yb: float = y_at.call(4.2)
+		var x := 0.5
+		while x + 0.55 < width - 0.3:
+			var p0 := l + dir * x + out * 1.2
+			var p1 := l + dir * (x + 0.55) + out * 1.2
+			var p2 := p1 + out * 3.0
+			var p3 := p0 + out * 3.0
+			_tri_up(zst, v3(p0, ya), v3(p1, ya), v3(p2, yb))
+			_tri_up(zst, v3(p0, ya), v3(p2, yb), v3(p3, yb))
+			x += 1.2
+		# semafor na prave strane prijizdejiciho auta (u vetsich krizovatek)
+		if main >= 1:
+			var pole_p := l - dir * 2.0 + out * 5.5
+			var gy := map.edge_height(ne.e, map.trim[id] + 5.5 if ne.start else total - map.trim[id] - 5.5) + CURB
+			var face := Basis.looking_at(v3(-out), Vector3.UP)
+			var sst := _tool("semafor", pole_p)
+			sst.append_from(_signal_meshes.pole, 0, Transform3D(Basis(), v3(pole_p, gy + 2.2)))
+			sst.append_from(_signal_meshes.head, 0, Transform3D(face, v3(pole_p, gy + 4.3)))
+			var green := phase == (k % 2 == 0)
+			var lamp_y := gy + (3.95 if green else 4.65)
+			var lp := pole_p + out * 0.17
+			_tool("svetlo_z" if green else "svetlo_c", pole_p).append_from(_signal_meshes.lamp, 0, Transform3D(face, v3(lp, lamp_y)))
+	_collect = was_collect
+
+
+## Vyska rohu krizovatky (bod p mezi ulici k a k+1): prumer vysek obou ulic v miste, kam se roh promita.
+## (Ve svahu je roh vyse nebo nize nez stred krizovatky - jinak by v rohu vznikl schod.)
+func _corner_height(node: int, k: int, p: Vector2) -> float:
+	var arr: Array = map.node_edges[node]
+	var total := 0.0
+	for j in [k, (k + 1) % arr.size()]:
+		var ne: Dictionary = arr[j]
+		var e: int = ne.e
+		var dist := maxf((p - map.nodes[node]).dot(ne.out), 0.0)
+		var length: float = map.stations[e][map.stations[e].size() - 1]
+		total += map.edge_height(e, dist if ne.start else length - dist)
+	return total * 0.5
 
 
 ## Spodek a boky mostovky pro jeden usek (aby most nebyl zespodu pruhledny).
@@ -663,13 +755,17 @@ func _commit_meshes() -> void:
 		"bariera": pbr("concrete_tile_facade", 0.2, Color(0.82, 0.84, 0.9)),
 		"svodidlo": simple(Color(0.62, 0.64, 0.68), 0.7, 0.4),
 		"pruh": simple(Color(1.0, 0.55, 0.12), 0.0, 0.4, 2.0),
+		"zebra": simple(Color(0.86, 0.86, 0.88), 0.0, 0.7, 0.25),
+		"semafor": simple(Color(0.08, 0.09, 0.1), 0.6, 0.5),
+		"svetlo_z": simple(Color(0.2, 1.0, 0.45), 0.0, 0.3, 7.0),
+		"svetlo_c": simple(Color(1.0, 0.12, 0.08), 0.0, 0.3, 7.0),
 	}
 	for key: String in _tools:
 		var kind := key.get_slice(":", 0)
 		var mi := MeshInstance3D.new()
 		mi.mesh = (_tools[key] as SurfaceTool).commit()
 		mi.material_override = mats[kind]
-		if kind == "silnice" or kind == "obrubnik" or kind == "chodnik":
+		if kind == "silnice" or kind == "obrubnik" or kind == "chodnik" or kind == "zebra" or kind.begins_with("svetlo"):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if kind == "silnice" or kind == "most":
 			mi.visibility_range_end = 5000.0
@@ -1072,31 +1168,60 @@ func _training_lot(holder: Node3D, c: Vector2, inside: Callable, ground: Callabl
 	if inside.call(c + Vector2(0, -95)):
 		_chunk(c + Vector2(0, -95)).signs.append(["big", "NEON WRECK", "monoton", at.call(c + Vector2(0, -95), 9.0), 0.0, 0.06, NEON[1], 260])
 
-	# Rampy
+	# Skokanky: 6 ruznych velikosti, kazdy s volnym rozjezdem a dopadem (hleda se misto na plose)
 	var ramp_mat := pbr("concrete_floor_worn_001", 0.4, Color(0.6, 0.6, 0.65))
 	var stripe := simple(Color(1.0, 0.75, 0.0), 0.0, 0.4, 3.0)
-	for rp in [[c + Vector2(-10, 20), 0.0, 12.0, 2.2, 8.0], [c + Vector2(45, -20), 90.0, 18.0, 3.6, 10.0], [c + Vector2(20, 60), -90.0, 10.0, 1.5, 7.0]]:
-		var pos: Vector2 = rp[0]
-		if not inside.call(pos):
-			continue
-		var length: float = rp[2]
-		var height: float = rp[3]
-		var width: float = rp[4]
-		var prism := PrismMesh.new()
-		prism.left_to_right = 1.0
-		prism.size = Vector3(length, height, width)
-		var body := StaticBody3D.new()
-		body.name = "Rampa"
-		holder.add_child(body)
-		body.position = at.call(pos, height * 0.5 - 0.15)
-		body.rotation_degrees = Vector3(0, 90.0 + float(rp[1]), 0)
-		mesh_at(prism, ramp_mat, Vector3.ZERO, body)
-		var cs := CollisionShape3D.new()
-		cs.shape = prism.create_convex_shape()
-		body.add_child(cs)
-		var edge_mesh := BoxMesh.new()
-		edge_mesh.size = Vector3(0.2, 0.1, width)
-		mesh_at(edge_mesh, stripe, Vector3(length * 0.5 - 0.1, height * 0.5 + 0.02, 0), body)
+	var specs := [[24.0, 6.0, 12.0, 150.0], [19.0, 4.2, 11.0, 130.0], [15.0, 3.0, 10.0, 110.0],
+		[12.0, 2.0, 9.0, 90.0], [9.0, 1.3, 8.0, 70.0], [7.0, 0.8, 7.0, 60.0]]
+	var placed: Array[Vector2] = []
+	var lrng := RandomNumberGenerator.new()
+	lrng.seed = 900 + index
+	for sp in specs:
+		var length: float = sp[0]
+		var height: float = sp[1]
+		var width: float = sp[2]
+		var runup: float = sp[3]
+		var landing := height * 14.0 + 30.0
+		for attempt in 160:
+			var pos := c + Vector2(lrng.randf_range(-260, 260), lrng.randf_range(-260, 260))
+			var d := Vector2.from_angle(lrng.randf() * TAU)
+			if pos.distance_to(c) < 85.0 or not inside.call(pos):
+				continue
+			var ok := true
+			for q in placed:
+				if q.distance_to(pos) < 55.0:
+					ok = false
+					break
+			var t := -runup
+			while ok and t <= landing:
+				for side in [-width * 0.5, width * 0.5]:
+					if not inside.call(pos + d * t + d.orthogonal() * side):
+						ok = false
+				t += 8.0
+			if not ok:
+				continue
+			placed.append(pos)
+			var prism := PrismMesh.new()
+			prism.left_to_right = 1.0
+			prism.size = Vector3(length, height, width)
+			var body := StaticBody3D.new()
+			body.name = "Skokanek"
+			holder.add_child(body)
+			body.position = at.call(pos, height * 0.5 - 0.15)
+			body.rotation = Vector3(0, atan2(-d.y, d.x), 0)
+			mesh_at(prism, ramp_mat, Vector3.ZERO, body)
+			var cs := CollisionShape3D.new()
+			cs.shape = prism.create_convex_shape()
+			body.add_child(cs)
+			var edge_mesh := BoxMesh.new()
+			edge_mesh.size = Vector3(0.25, 0.12, width)
+			mesh_at(edge_mesh, stripe, Vector3(length * 0.5 - 0.12, height * 0.5 + 0.03, 0), body)
+			# svitici pruhy na zemi pred rampou (naznak rozjezdu)
+			for k in 4:
+				var mark := BoxMesh.new()
+				mark.size = Vector3(1.2, 0.03, width * 0.8)
+				mesh_at(mark, stripe, Vector3(-length * 0.5 - 6.0 - k * 9.0, -height * 0.5 + 0.18, 0), body)
+			break
 
 	# Kontejnery, zabrany (slalom), sudy a bedny
 	var cont_tints := [Color(0.7, 0.2, 0.15), Color(0.15, 0.35, 0.65), Color(0.2, 0.5, 0.3), Color(0.75, 0.55, 0.15)]

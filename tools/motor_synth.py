@@ -16,17 +16,18 @@ SR = 44100
 ENGINES = {
     # Octavia RS 2.0 TSI: turbo a tlumice = hlubsi, hladsi, kultivovany zvuk
     "r4": dict(
-        banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.07, time_var=0.004, header_m=0.38, pipe_m=[2.9],
-        muffler_hz=650.0, bypass=0.20, drive=1.2, formants=[(230, 1.6, 2.0), (640, 1.6, 3.0), (1400, 1.5, 3.5), (2900, 1.0, 4.0)],
+        attack=0.00028, spread=0.1, jitter=(0.03, 0.1, 1.4), banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.035, time_var=0.003, header_m=0.38, pipe_m=[2.9],
+        muffler_hz=560.0, bypass=0.18, drive=1.2, formants=[(150, 2.4, 1.6), (420, 1.8, 2.5), (1100, 1.5, 3.5), (2600, 0.9, 4.0)],
         intake=0.30, hiss=0.10, mech=0.06, pops=0.0, rpm_on=[1000, 2200, 3600, 5000, 6600], rpm_off=[900, 3200, 6000]),
     # Silvia SR20DET s primym vyfukem: chrapla, hlasita, "tunerska"
     "r4s": dict(
-        banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.16, time_var=0.008, header_m=0.55, pipe_m=[2.1],
-        muffler_hz=1500.0, bypass=0.38, drive=2.4, formants=[(340, 1.8, 2.5), (900, 2.4, 3.5), (2300, 2.2, 4.0), (3800, 1.2, 4.0)],
-        intake=0.34, hiss=0.16, mech=0.07, pops=0.10, rpm_on=[1100, 2400, 3900, 5500, 7100], rpm_off=[1000, 3500, 6500]),
+        attack=0.00028, spread=0.1, jitter=(0.03, 0.1, 1.4), banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.07, time_var=0.004, header_m=0.55, pipe_m=[2.3],
+        muffler_hz=1100.0, bypass=0.3, drive=2.0, formants=[(190, 2.4, 1.8), (520, 2.2, 2.5), (1500, 2.0, 3.5), (3400, 1.0, 4.0)],
+        intake=0.34, hiss=0.11, mech=0.07, pops=0.10, rpm_on=[1100, 2400, 3900, 5500, 7100], rpm_off=[1000, 3500, 6500]),
     # Mustang 5.0 V8: dve vetve vyfuku s nepravidelnymi zazehy = typicke "bublani"
     "v8": dict(
-        banks=[[0.0, 0.25, 0.625, 0.875], [0.125, 0.375, 0.5, 0.75]], cyl_var=0.10, time_var=0.006, header_m=0.6, pipe_m=[2.6, 2.78],
+        attack=0.00024, spread=0.15, jitter=(0.04, 0.14, 1.8),
+        banks=[[0.0, 0.25, 0.625, 0.875], [0.125, 0.375, 0.5, 0.75]], cyl_var=0.08, time_var=0.005, header_m=0.6, pipe_m=[2.6, 2.78],
         muffler_hz=800.0, bypass=0.26, drive=1.8, formants=[(140, 2.2, 1.8), (430, 1.8, 2.5), (1150, 1.8, 3.5), (2500, 1.2, 4.0)],
         intake=0.30, hiss=0.12, mech=0.05, pops=0.05, rpm_on=[800, 1900, 3100, 4500, 6000], rpm_off=[750, 2800, 5500]),
     # BMW M3 S54: radovy sestivalec bez turba, toci 8000 - kovove jeci, hlasite sani
@@ -36,22 +37,26 @@ ENGINES = {
         intake=0.42, hiss=0.08, mech=0.08, pops=0.03, rpm_on=[1000, 2500, 4200, 6000, 7900], rpm_off=[900, 3800, 7200]),
     # Supra 2JZ-GTE: sestivalec s turbem - hladky, hlubsi, "huci"
     "r6t": dict(
-        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.07, time_var=0.004, header_m=0.5, pipe_m=[2.7, 2.85],
+        attack=0.00022, spread=0.15, jitter=(0.04, 0.12, 1.6),
+        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.05, time_var=0.003, header_m=0.5, pipe_m=[2.7, 2.85],
         muffler_hz=800.0, bypass=0.22, drive=1.4, formants=[(220, 1.8, 2.2), (620, 1.8, 3.0), (1500, 1.6, 3.5), (3000, 1.0, 4.0)],
         intake=0.28, hiss=0.11, mech=0.05, pops=0.06, rpm_on=[1000, 2300, 3700, 5200, 6900], rpm_off=[900, 3300, 6300]),
     # Skyline RB26: sestivalec s turbem a primym vyfukem - chraplavy, ostry
     "r6s": dict(
-        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.1, time_var=0.005, header_m=0.42, pipe_m=[2.2, 2.32],
+        attack=0.0002, spread=0.15, jitter=(0.04, 0.12, 1.6),
+        banks=[[0.0, 1 / 3, 2 / 3], [1 / 6, 0.5, 5 / 6]], cyl_var=0.06, time_var=0.004, header_m=0.42, pipe_m=[2.2, 2.32],
         muffler_hz=1400.0, bypass=0.34, drive=2.2, formants=[(300, 1.8, 2.5), (860, 2.6, 3.5), (2200, 2.4, 4.0), (3900, 1.4, 4.0)],
         intake=0.3, hiss=0.14, mech=0.07, pops=0.1, rpm_on=[1100, 2500, 4100, 5900, 7900], rpm_off=[1000, 3700, 7200]),
     # Impreza EJ257: plochy ctyrvalec - ruzne dlouhe svody = typicke nepravidelne "bublani"
     "boxer": dict(
-        banks=[[0.0, 0.27, 0.5, 0.77]], cyl_var=0.18, time_var=0.006, header_m=0.7, pipe_m=[2.5],
-        muffler_hz=700.0, bypass=0.24, drive=1.7, formants=[(180, 2.4, 2.0), (520, 2.0, 3.0), (1300, 1.6, 3.5), (2700, 1.0, 4.0)],
+        attack=0.00026, spread=0.12, jitter=(0.035, 0.12, 1.5),
+        banks=[[0.0, 0.26, 0.5, 0.76]], cyl_var=0.09, time_var=0.004, header_m=0.7, pipe_m=[2.6],
+        muffler_hz=620.0, bypass=0.22, drive=1.6, formants=[(140, 2.6, 1.8), (520, 2.0, 3.0), (1300, 1.6, 3.5), (2700, 1.0, 4.0)],
         intake=0.3, hiss=0.12, mech=0.05, pops=0.08, rpm_on=[900, 2100, 3500, 5000, 7400], rpm_off=[850, 3100, 6400]),
     # RX-7 13B: wankel - ostre vyfukove pulsy, bzucivy "brap", vysoke otacky
     "rot": dict(
-        banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.05, time_var=0.004, header_m=0.4, pipe_m=[1.9],
+        attack=0.0002, spread=0.12, jitter=(0.035, 0.12, 1.6),
+        banks=[[0.0, 0.25, 0.5, 0.75]], cyl_var=0.04, time_var=0.003, header_m=0.4, pipe_m=[1.9],
         muffler_hz=1800.0, bypass=0.4, drive=2.6, formants=[(420, 2.2, 2.5), (1200, 3.0, 3.5), (2900, 2.6, 4.0)],
         intake=0.38, hiss=0.12, mech=0.03, pops=0.12, rpm_on=[1100, 2700, 4500, 6400, 8400], rpm_off=[1000, 4000, 7600]),
 }
@@ -91,7 +96,7 @@ def engine_loop(kind, rpm, load, seed=1, seconds=1.1):
 
     # --- 1. Vyfukove pulsy ---
     tau_d = np.clip(0.055 * cycle, 0.0007, 0.0040) * (1.0 if load > 0.5 else 1.5)   # doznivani pulsu
-    tau_r = 0.00016 if load > 0.5 else 0.00045                                      # nabeh pulsu (bez plynu mekci)
+    tau_r = e.get("attack", 0.00016) if load > 0.5 else 0.00045                                     # nabeh pulsu (bez plynu mekci)
     pulse = 1.0 / (1.0 / tau_d + 1j * w) - 1.0 / (1.0 / tau_r + 1j * w)
     pulse = pulse / np.max(np.abs(pulse)) * (1j * w / (2.0 * np.pi * 300.0))        # vyzarovani z koncovky
     bank_spec = []
@@ -103,10 +108,11 @@ def engine_loop(kind, rpm, load, seed=1, seconds=1.1):
             cyl_index += 1
             crng = np.random.default_rng(1000 + cyl_index)
             cyl_amp = 1.0 + e["cyl_var"] * crng.uniform(-1.0, 1.0)                 # kazdy valec trochu jiny
-            cyl_delay = e["header_m"] * crng.uniform(0.0, 0.25) / 480.0            # ruzne dlouhe svody
+            cyl_delay = e["header_m"] * crng.uniform(0.0, e.get("spread", 0.25)) / 480.0            # ruzne dlouhe svody
             for k in range(cycles):
-                jit_a = (0.05 if load > 0.5 else 0.22) * rng.standard_normal()
-                jit_t = e["time_var"] * (1.0 if load > 0.5 else 2.5) * rng.standard_normal()
+                jit_on, jit_off, t_off = e.get("jitter", (0.05, 0.22, 2.5))
+                jit_a = (jit_on if load > 0.5 else jit_off) * rng.standard_normal()
+                jit_t = e["time_var"] * (1.0 if load > 0.5 else t_off) * rng.standard_normal()
                 amp = cyl_amp * (1.0 + jit_a)
                 if load < 0.5:
                     amp *= 0.45

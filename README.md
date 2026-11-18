@@ -23,7 +23,6 @@ demolice aut (inspirace FlatOut 2) a zbraně na trati (inspirace Mario Kart).
 - `scripts/world/` – mapa: plán města (`city_map.gd`), stavba (`city_builder.gd`), okruh (`circuit.gd`)
 - `scripts/fx/` – efekty (kouř, oheň, jiskry, výbuch, nitro)
 - `assets/sounds/` + `tools/generuj_zvuky.py`, `tools/motor_synth.py` – syntetické zvuky
-- `addons/gevp/` – převzaté řízení Easy Vehicle Physics (varianta na F7)
 - `scripts/ui/` – HUD, tachometr, minimapa, velká mapa
 - `scripts/autoload/` – ovládání a nastavení grafiky
 - `shaders/` – silnice, budovy, efekty obrazovky

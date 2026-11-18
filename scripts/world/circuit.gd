@@ -23,6 +23,9 @@ var last_time := 0.0
 var lap_count := 0
 var running := false
 var next_cp := 0
+var record_time := 0.0              # ulozeny rekord pro toto auto a rizeni
+var new_record := false
+var turns := PackedFloat32Array()       # zatoceni v kazde krizovatce okruhu (stupne, + = doprava)
 
 var _markers: Array[Node3D] = []
 var _items: Array = []                  # [[ulice, vpred]]
@@ -146,6 +149,7 @@ func _build_visuals(start_half_width: float) -> void:
 		var id: int = nd[3]
 		var p := CityMap.to3(map.nodes[id], map.node_y[id])
 		var turn := d_in.angle_to(d_out)            # + = doprava (pri pohledu shora)
+		turns.append(rad_to_deg(turn))
 		var size: float = map.trim[id] + 6.0
 		# Svitici sipky na vnejsi strane zatacky (bez kolize), celem k prijizdejicimu autu
 		if absf(turn) > deg_to_rad(28.0):
@@ -156,15 +160,15 @@ func _build_visuals(start_half_width: float) -> void:
 			var label := Label3D.new()
 			label.font = font
 			label.text = "› › › › ›" if turn > 0.0 else "‹ ‹ ‹ ‹ ‹"
-			label.font_size = 220
-			label.pixel_size = 0.011
+			label.font_size = 300
+			label.pixel_size = 0.014
 			label.modulate = Color(2.2, 1.6, 0.1, 0.9)
 			label.outline_modulate = Color(0.4, 0.2, 0.0, 0.6)
 			label.outline_size = 20
 			label.shaded = false
 			label.double_sided = false
-			label.position = Vector3(0, 2.2, 0)
-			label.visibility_range_end = 450.0
+			label.position = Vector3(0, 3.0, 0)
+			label.visibility_range_end = 700.0
 			board.add_child(label)
 		# Svitici sloupek u krizovatky, kterou ma hrac projet jako dalsi
 		var marker := MeshInstance3D.new()
@@ -237,6 +241,7 @@ func _physics_process(delta: float) -> void:
 	var local := start_xf.affine_inverse() * p
 	if absf(local.x) < 13.0 and absf(local.z) < 3.5 and absf(local.y) < 5.0 and car.linear_velocity.dot(-start_xf.basis.z) > 2.0:
 		if not running:
+			record_time = LapRecords.best(title, str(car.get("car_id")), Hra.profile)
 			running = true
 			lap_time = 0.0
 			next_cp = 1
@@ -244,6 +249,9 @@ func _physics_process(delta: float) -> void:
 			last_time = lap_time
 			if best_time <= 0.0 or lap_time < best_time:
 				best_time = lap_time
+			new_record = LapRecords.add_lap(title, str(car.get("car_id")), Hra.profile, lap_time)
+			if new_record:
+				record_time = lap_time
 			lap_count += 1
 			lap_finished.emit(last_time, best_time)
 			lap_time = 0.0
@@ -258,7 +266,27 @@ func _physics_process(delta: float) -> void:
 		_markers[i].visible = (not running and i == 1) or (running and i == next_cp)
 
 
+## Pristi zatacka na trase: {"dist": metry po trase, "turn": stupne (+ doprava)}; prazdne, kdyz zadna.
+func next_turn() -> Dictionary:
+	if car == null or not is_instance_valid(car) or checkpoints.size() < 2:
+		return {}
+	var n := checkpoints.size()
+	var k := next_cp if running else 1
+	var p := car.global_position
+	var dist := Vector2(p.x - checkpoints[k].x, p.z - checkpoints[k].z).length()
+	for i in n:
+		var idx := (k + i) % n
+		if absf(turns[idx]) > 28.0:
+			return {"dist": dist, "turn": turns[idx]}
+		var e: int = _items[idx][0]
+		dist += map.stations[e][map.stations[e].size() - 1]
+	return {}
+
+
 func reset() -> void:
+	best_time = 0.0
+	last_time = 0.0
+	lap_count = 0
 	running = false
 	lap_time = 0.0
 	next_cp = 0

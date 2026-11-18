@@ -3,14 +3,18 @@ extends Camera3D
 ## Kamera za autem ve stylu poulicnich zavodu. Klavesa C prepina pohledy, Q = pohled dozadu.
 ## V rychlosti se kamera mirne vzdali a snizi, roste zorne pole, pri nitru se trese.
 
+## Ve svahu se kamera naklani s autem (vyhlazene), takze z kopce je videt cesta pred autem.
 const VIEWS := [
-	{"name": "Za autem", "dist": 5.4, "height": 1.7, "look_height": 1.0},
-	{"name": "Daleko", "dist": 7.8, "height": 2.6, "look_height": 1.2},
-	{"name": "Kapota", "dist": -0.4, "height": 1.25, "look_height": 1.15},
+	{"name": "Blizko", "dist": 4.6, "height": 1.75, "look_height": 1.0, "ahead": 6.0},
+	{"name": "Za autem", "dist": 5.6, "height": 2.3, "look_height": 1.0, "ahead": 7.0},
+	{"name": "Vys", "dist": 6.2, "height": 3.3, "look_height": 0.9, "ahead": 8.0},
+	{"name": "Zhora", "dist": 7.0, "height": 4.6, "look_height": 0.8, "ahead": 10.0},
+	{"name": "Ptaci", "dist": 8.5, "height": 6.6, "look_height": 0.6, "ahead": 12.0},
+	{"name": "Kapota", "dist": -0.4, "height": 1.25, "look_height": 1.15, "ahead": 25.0},
 ]
 
-@export var target: RigidBody3D  # Car nebo GevpCar
-var view_index := 0
+@export var target: RigidBody3D
+var view_index := 2
 var base_fov := 66.0
 
 var _yaw := 0.0
@@ -21,6 +25,7 @@ var _prev_fwd_speed := 0.0
 var _initialized := false
 var _noise := FastNoiseLite.new()
 var _time := 0.0
+var _pitch := 0.0
 
 
 func _ready() -> void:
@@ -71,6 +76,15 @@ func _physics_process(delta: float) -> void:
 			var vel_yaw := atan2(-flat_v.x, -flat_v.z)
 			aim_yaw = lerp_angle(car_yaw, vel_yaw, 0.6)
 		_yaw = lerp_angle(_yaw, aim_yaw, 1.0 - exp(-5.5 * delta))
+		# Sklon silnice: z nakloneni auta (jen kdyz stoji na kolech), vyhlazene a omezene
+		var slope := 0.0
+		if absf(target.global_basis.y.y) > 0.7:
+			var hf := Vector3(car_fwd.x, 0, car_fwd.z).length()
+			slope = clampf(atan2(car_fwd.y, maxf(hf, 0.01)), -0.42, 0.42)
+			# kamera se diva ve smeru auta; jede-li auto pozpatku, sklon se otoci
+			if flat_v.length() > 3.0 and flat_v.dot(car_fwd) < 0.0:
+				slope = -slope
+		_pitch = lerpf(_pitch, slope, 1.0 - exp(-3.0 * delta))
 		var yaw := _yaw
 		if Input.is_action_pressed("pohled_vzad"):
 			yaw += PI
@@ -79,9 +93,10 @@ func _physics_process(delta: float) -> void:
 		var accel := (fwd_speed - _prev_fwd_speed) / maxf(delta, 0.001)
 		_prev_fwd_speed = fwd_speed
 		_lag = lerpf(_lag, clampf(accel * 0.06, -0.45, 0.6), 1.0 - exp(-3.0 * delta))
-		var rot := Basis(Vector3.UP, yaw)
+		var rot := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, _pitch * (-1.0 if Input.is_action_pressed("pohled_vzad") else 1.0))
 		var dist := view_dist + speed_f * 1.2 + _lag + (0.5 if target.get("nitro_active") else 0.0)
-		var height := view_height - speed_f * 0.2
+		var height := view_height - speed_f * 0.2 * view_height / 2.0
+		var ahead: float = view.ahead
 		var desired := car_pos + rot * Vector3(0, height, dist)
 		# Kamera nesmi vlezt do budovy: paprsek od auta ke kamere
 		var from := car_pos + Vector3.UP * 1.2
@@ -94,8 +109,8 @@ func _physics_process(delta: float) -> void:
 			global_position = desired
 		else:
 			global_position = global_position.lerp(desired, 1.0 - exp(-16.0 * delta))
-		var look_at_pos := car_pos + Vector3.UP * look_height + rot * Vector3(0, 0, -6.0)
-		look_at(look_at_pos, Vector3.UP)
+		var look_at_pos := car_pos + rot * Vector3(0, look_height, -ahead)
+		look_at(look_at_pos, rot.y.lerp(Vector3.UP, 0.5).normalized())
 
 	# Otres: pri narazu + jemne chveni v rychlosti a pri nitru
 	var shake := _shake * _shake + smoothstep(0.55, 1.0, speed_f) * 0.035

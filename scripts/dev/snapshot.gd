@@ -50,19 +50,18 @@ func _ready() -> void:
 		if map.edge_class[e] == "horska" and hill == Vector3.ZERO and pl.size() > 200:
 			hill = CityMap.to3(pl[150], map.heights[e][150])
 	var all := [
-		["mapa", Vector3(0, 9500, -899), Vector3(0, 0, -900), true],
+		["mapa", Vector3(4700, 14000, -1801), Vector3(4700, 0, -1800), true],
 		["start", st.origin + st.basis * Vector3(0.5, 1.6, 7.5), st.origin + st.basis * Vector3(0, 0.0, -20), false],
-		["plocha", lot + Vector3(120, 90, 160), lot, false],
+		["plocha", lot + Vector3(90, 45, 120), lot, false],
 		["reka", g.call(250, 520, 60), g.call(-200, 250, 0), false],
 		["stare", g.call(150, 150, 110), g.call(-50, -80, 0), false],
-		["mrizka", g.call(900, -500, 200), g.call(1400, -1000, 0), false],
+		["mestoB", g.call(8200, 300, 160), g.call(9500, 900, 0), false],
 		["most", bridge, bridge + bridge_dir * 60.0, false],
 		["podjezd", under, under + under_dir * 60.0, false],
 		["serpentiny", hill + Vector3(0, 60, 0) + (hill * Vector3(1, 0, 1)).normalized() * 250.0, hill, false],
-		["vyhled", hill + Vector3(0, 12, 0), Vector3(0, 30, 0), false],
-		["serpentiny2", g.call(-1300, -3900, 170), g.call(-2150, -4350, 0), false],
-		["zvrcholu", g.call(-2119, -5029, 45), Vector3(0, 40, -300), false],
-		["kopce", g.call(-600, -3200, 90), g.call(-1800, -4900, 150), false],
+		["vyhled", hill + Vector3(0, 12, 0), Vector3(4700, 30, 0), false],
+		["kopce", g.call(-600, -3600, 120), g.call(-900, -6500, 250), false],
+		["hory", g.call(4000, -4200, 250), g.call(2500, -7500, 450), false],
 	]
 	# Pohledy ridice podel okruhu
 	var route: PackedVector3Array = arena.circuit.route
@@ -90,6 +89,11 @@ func _ready() -> void:
 			for id in arg.substr(7).split(","):
 				var front := st.origin + st.basis * Vector3(-4.2, 0.6, -6.2)
 				_views.append(["auto_" + id, front, st.origin + Vector3(0, 0.1, 0), false, id])
+		if arg.begins_with("--nitro="):
+			NitroFlame.force_on = true
+			for id in arg.substr(8).split(","):
+				var back := st.origin + st.basis * Vector3(-3.0, 0.9, 4.6)
+				_views.append(["nitro_" + id, back, st.origin + st.basis * Vector3(0, 0.3, 1.5), false, id])
 
 
 func _process(_delta: float) -> void:
@@ -103,6 +107,7 @@ func _process(_delta: float) -> void:
 		tacho._rpm = _tacho.x
 		tacho._speed = _tacho.y
 		arena.car.nitro = _tacho.z
+		tacho._nitro_shown = _tacho.z
 		tacho.queue_redraw()
 	if _index >= _views.size():
 		get_tree().quit()

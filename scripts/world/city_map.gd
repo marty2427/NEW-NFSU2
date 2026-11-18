@@ -126,8 +126,8 @@ func _init() -> void:
 			if arr.size() == 1:
 				continue
 			if theta < PI * 0.95:
-				d = maxf(d, maxf(a.w, b.w) / tan(theta * 0.5) + 1.0)
-		trim[id] = minf(d, 34.0)
+				d = maxf(d, (maxf(a.w, b.w) + SIDEWALK + 0.6) / tan(theta * 0.5) + 1.0)
+		trim[id] = minf(d, 48.0)
 
 
 func _add_node_edge(node: int, e: int, out: Vector2, start: bool) -> void:
