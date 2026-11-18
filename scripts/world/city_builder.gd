@@ -89,8 +89,8 @@ func build() -> void:
 	for prop in ["Barrel_01", "wooden_crate_01", "metal_trash_can", "fire_hydrant", "concrete_road_barrier"]:
 		_prop_scenes[prop] = load("res://assets/props/%s/%s_1k.gltf" % [prop, prop])
 	if OS.get_cmdline_user_args().has("--statistika"):
-		print("[MESTO] krizovatek %d, ulic %d, domu %d, lamp %d, cedul %d, stromu %d, dlazdic %d, trojuhelniku vozovky %d" % [
-			map.nodes.size(), map.polylines.size(), building_count, lamp_count, sign_count, tree_count, _chunks.size(), ground_triangles])
+		print("[MESTO] krizovatek %d, ulic %d, domu %d, lamp %d, cedul %d, stromu %d, dlazdic %d, trojuhelniku vozovky %d, pilire %d (vynechano nad silnici %d)" % [
+			map.nodes.size(), map.polylines.size(), building_count, lamp_count, sign_count, tree_count, _chunks.size(), ground_triangles, pillar_count, pillars_skipped])
 
 
 ## Ve dne okna a vylohy sviti jen slabe, v noci naplno.
@@ -490,6 +490,8 @@ func _build_trees() -> void:
 # ---------------------------------------------------------------------
 
 var _signal_meshes := {}
+var pillar_count := 0
+var pillars_skipped := 0
 
 
 func _build_roads() -> void:
@@ -557,7 +559,7 @@ func _build_roads() -> void:
 			if map.is_bridge(e, (ss[i] + ss[i + 1]) * 0.5):
 				_deck(left_o[i], left_o[i + 1], right_o[i], right_o[i + 1], y0, y1)
 				if int(ss[i] / 44.0) != int(ss[i + 1] / 44.0):
-					_pillar(axis[i], (axis[i + 1] - axis[i]).normalized(), w, y0)
+					_pillar(e, axis[i], (axis[i + 1] - axis[i]).normalized(), w, y0)
 		# Konce vozovky pro plochu krizovatky: [levy roh, pravy roh, vyska, levy okraj chodniku, pravy okraj chodniku]
 		# (levy/pravy pri pohledu z krizovatky ven)
 		var last := axis.size() - 1
@@ -726,16 +728,38 @@ func _deck(lo0: Vector2, lo1: Vector2, ro0: Vector2, ro1: Vector2, y0: float, y1
 
 
 ## Pilir mostu (jen kdyz je pod mostem hloubka - reka nebo udoli).
-func _pillar(p: Vector2, dir: Vector2, w: float, deck_y: float) -> void:
+func _pillar(e: int, p: Vector2, dir: Vector2, w: float, deck_y: float) -> void:
 	var ground := minf(map.height_at(p.x, p.y), map.water_level) - 1.0
 	var top := deck_y - DECK
 	if top - ground < 5.0:
 		return
-	var st := _tool("most", p)
 	var side := CityMap.right_of(dir)
 	var hx := dir * 1.4
 	var hy := side * (w * 0.75)
 	var corners := [p - hx - hy, p + hx - hy, p + hx + hy, p - hx + hy]
+	# Pilir nesmi stat na silnici nebo chodniku pod mostem (driv se jim dalo projet)
+	for e2 in map.edges_near(p, w + 40.0):
+		if e2 == e:
+			continue
+		var pl := map.polylines[e2]
+		var clear := map.half_width[e2] + CityMap.SIDEWALK + 1.5
+		for q: Vector2 in corners + [p]:
+			for i in pl.size() - 1:
+				if q.distance_to(Geometry2D.get_closest_point_to_segment(q, pl[i], pl[i + 1])) < clear:
+					pillars_skipped += 1
+					return
+	pillar_count += 1
+	var st := _tool("most", p)
+	# pevny pilir (kdyby do nej auto narazilo, zastavi ho)
+	var body := StaticBody3D.new()
+	body.name = "Pilir"
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(2.8, top - ground, w * 1.5)
+	cs.shape = box
+	body.add_child(cs)
+	body.transform = Transform3D(Basis.looking_at(v3(side), Vector3.UP), v3(p, (top + ground) * 0.5))
+	_static_holder.add_child(body)
 	for i in 4:
 		var a: Vector2 = corners[i]
 		var b: Vector2 = corners[(i + 1) % 4]

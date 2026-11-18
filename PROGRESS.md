@@ -163,6 +163,10 @@
 - **Zvuky motorů**: všechny kromě BMW (to se hráči líbilo) jsou hlubší a hladší – měkčí náběh pulsů, menší rozdíly mezi válci,
   méně náhodného „poskakování“ (to dělalo dojem dvouválcové sekačky), nižší rezonance. Neověřeno poslechem.
 
+- **Oprava (hlásil hráč u staré „osmičky“)**: pilíře mostů stály i na silnici pod mostem a daly se projet →
+  pilíř nad jinou silnicí/chodníkem se nestaví (na nové mapě 18 takových), ostatní mají kolizi.
+  Jízda „pod vodou“: na nové mapě žádná silnice pod hladinou není; `road_check` to nově hlídá (POD VODOU: 0).
+
 ## 8. kolo – 5 nových aut (modely dodal hráč přes Cowork, `assets/cars/`)
 - **Auta** (klávesy 1–8 nebo N): Octavia, Mustang, Silvia, **Skyline R34** (AWD, 235 kW, stabilní, „Godzilla“),
   **Supra MK4** (RWD, 250 kW, nejrychlejší na rovince, na plyn přetáčí), **RX-7 FD** (RWD, 1280 kg, nejhbitější, snadno driftuje,

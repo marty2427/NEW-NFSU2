@@ -21,6 +21,7 @@ func _ready() -> void:
 			limit = int(arg.substr(7))
 	var steps := []
 	var walls := []
+	var wet := []                 # povrch silnice pod hladinou vody (auto by jelo "pod vodou")
 	var samples := 0
 	var ground := func(q: Vector2, y: float) -> float:
 		var from := Vector3(q.x, y + 2.5, q.y)
@@ -45,6 +46,8 @@ func _ready() -> void:
 				var q: Vector2 = p + r * lat
 				var h: float = ground.call(q, y)
 				samples += 1
+				if h > -900.0 and h < map.water_level + 0.3:
+					wet.append([e, s, q, h])
 				if prev > -900.0 and h > -900.0 and absf(h - prev) > 0.09 and not under:
 					steps.append([e, s, q, h - prev])
 				prev = h
@@ -104,4 +107,7 @@ func _ready() -> void:
 		if n < 12:
 			printerr("  PREKAZKA ulice %d (%s) s=%.0f u (%.0f, %.0f) %s" % [wl[0], map.edge_class[wl[0]], wl[1], wl[2].x, wl[2].y, wl[3]])
 		n += 1
+	printerr("[KONTROLA] POD VODOU: %d bodu" % wet.size())
+	for i in mini(wet.size(), 8):
+		printerr("  VODA ulice %d (%s) u (%.0f, %.0f) vyska %.2f" % [wet[i][0], map.edge_class[wet[i][0]], wet[i][2].x, wet[i][2].y, wet[i][3]])
 	get_tree().quit()
